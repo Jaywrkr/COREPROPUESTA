@@ -238,7 +238,10 @@ td.phantom::after { content: ""; }
           <label class="btn btn-primary" for="file">Elegir archivo</label>
           <input type="file" id="file" accept=".xlsx,.xls" hidden>
         </div>
-        <button class="btn btn-secondary" id="btnSample" style="align-self:flex-start">Probar con el ejemplo Mantamed</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary" id="btnSample">Probar con el ejemplo Mantamed</button>
+          <button class="btn btn-secondary" id="btnLearn" hidden>Bandeja de aprendizaje</button>
+        </div>
         <div class="err" id="err" role="alert"></div>
       </div>
       <div class="r">
@@ -408,6 +411,7 @@ zone.addEventListener('drop', async (e) => { const f = e.dataTransfer.files[0]; 
 document.addEventListener('dragover', (e) => e.preventDefault());
 document.addEventListener('drop', async (e) => { e.preventDefault(); if (!$('empty').hidden) return; const f = e.dataTransfer && e.dataTransfer.files[0]; if (f && /\.xlsx?$/i.test(f.name)) loadFile(new Uint8Array(await f.arrayBuffer()), f.name); });
 $('btnSample').addEventListener('click', () => loadFile(SAMPLE.slice(0), SAMPLE_NAME));
+$('btnLearn').addEventListener('click', () => { $('empty').hidden = true; $('work').hidden = false; sheet = 'A'; render(); if (FB.adminKey && !FB.items && !FB.loading) loadLearn(); });
 $('btnNew').addEventListener('click', () => { $('work').hidden = true; $('empty').hidden = false; $('file').click(); });
 
 // ---- modelo: lectura/escritura por ruta ----
@@ -438,6 +442,16 @@ function cellAt(r, c) { if (NOGRID()) return null; const row = rowsOf().find((x)
 function rowAt(r) { return rowsOf().find((x) => x.r === r) || null; }
 
 function render() {
+  if (!parsed) { // sin configurador cargado: solo Reglas / Aprendizaje
+    ['tabP', 'tabL'].forEach((id) => { $(id).hidden = true; $(id).setAttribute('aria-selected', false); });
+    $('tabR').setAttribute('aria-selected', sheet === 'R'); $('tabA').setAttribute('aria-selected', sheet === 'A');
+    if (sheet === 'A') renderLearn(); else { sheet = 'R'; renderRules(); }
+    ['bLineAdd','bLineDel','bCostAdd','bCostDel','bNote','bText','bUp','bDown','bBlockDel','bClient','bUndo','bRedo','bDownload'].forEach((id) => ($(id).disabled = true));
+    $('nameBox').textContent = '—'; $('fInput').value = ''; $('fInput').readOnly = true; $('status').innerHTML = '';
+    $('side').innerHTML = `<div class="card"><h3>Sin configurador</h3><p class="note">Para generar una propuesta, sube un configurador Lenovo.</p><label class="btn btn-primary" for="file" style="align-self:flex-start">Subir configurador</label></div>`;
+    return;
+  }
+  ['tabP', 'tabL'].forEach((id) => ($(id).hidden = false)); $('bDownload').disabled = false;
   compute();
   $('tabR').setAttribute('aria-selected', sheet === 'R'); $('tabA').setAttribute('aria-selected', sheet === 'A');
   if (NOGRID()) { if (sheet === 'R') renderRules(); else renderLearn(); $('tabP').setAttribute('aria-selected', false); $('tabL').setAttribute('aria-selected', false); updateButtons(); renderSide(); renderStatus(); $('nameBox').textContent = '—'; $('fInput').value = ''; $('fInput').readOnly = true; return; }
@@ -884,7 +898,7 @@ try { FB.adminKey = sessionStorage.getItem('cp_admin') || null; } catch (_) {}
 (async () => {
   if (window.claude && window.claude.use) return;
   try { const r = await fetch('api/ping', { cache: 'no-store' }); if (!r.ok) return; const j = await r.json(); FB.on = !!j.feedback; FB.admin = !!j.admin; } catch (_) {}
-  $('tabA').hidden = !(FB.on && FB.admin);
+  $('tabA').hidden = !(FB.on && FB.admin); $('btnLearn').hidden = !(FB.on && FB.admin);
 })();
 async function api(url, data, admin) {
   const h = { 'Content-Type': 'application/json' };
