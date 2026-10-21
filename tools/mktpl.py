@@ -27,7 +27,7 @@ def tplsheet(x, extra_tail=False):
     return x
 s1 = tplsheet(t('xl/worksheets/sheet2.xml'))
 # Firma, celular y correo del pie de página -> marcadores (los valores reales van cifrados en vault.json)
-s1 = re.sub(r'(Atentamente,\s*\n(?:\s*\n)*)([^\n]+)(\nCORESOLUTIONS)', r'\1{{FIRMA}}\3', s1, count=1)
+s1 = re.sub(r'(Atentamente,\s*\n(?:\s*\n)*)([^\r\n]+)(\r?\nCORESOLUTIONS)', r'\1{{FIRMA}}\3', s1, count=1)
 s1 = re.sub(r'(Cel\.:\s*)([^,<]+)(,\s*e-mail:\s*)([^<\s]+)', r'\1{{CEL}}\3{{EMAIL}}', s1, count=1)
 assert '{{FIRMA}}' in s1 and '{{CEL}}' in s1 and '{{EMAIL}}' in s1
 s2 = tplsheet(t('xl/worksheets/sheet4.xml')).replace('tabSelected="1" ','')
