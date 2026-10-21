@@ -269,7 +269,17 @@
       else if (/\b1\s*GbE/i.test(nc.desc)) label = 'Ethernet 1Gb RJ-45';
       byType[label] = (byType[label] || 0) + ports * nc.qty; (byTypeC[label] = byTypeC[label] || []).push(nc);
     }
-    for (const [label, n] of Object.entries(byType)) (cur = C(byTypeC[label])), L(`${n} puertos ${label},`);
+    // Cables DAC/AOC del configurador (issue #2): se agregan a la línea de red de su misma velocidad
+    const cables = has(/\bDAC\b|\bAOC\b|Active Optical/i).filter((f) => /cable/i.test(f.desc));
+    const cableTxt = (lbl) => {
+      const sp = /10\/25Gb SFP28/.test(lbl) ? /25G|SFP28/i : /100Gb/.test(lbl) ? /100G|QSFP/i : /10Gb SFP\+/.test(lbl) ? /10G\b|SFP\+/i : null;
+      if (!sp) return '';
+      const mine = cables.filter((c) => sp.test(c.desc) && !c._used); if (!mine.length) return '';
+      mine.forEach((c) => (c._used = true));
+      return mine.map((c) => { const m = /(\d+(?:[.,]\d+)?)\s*m\b/i.exec(c.desc); const g = /(\d+)\s*G(?:b|bE)?\b/i.exec(c.desc); const t = /AOC|Active Optical/i.test(c.desc) ? 'AOC' : 'DAC';
+        return `${c.qty} cable${c.qty === 1 ? '' : 's'} ${t}${m ? ` de ${m[1].replace(',', '.')}m` : ''}${g ? ` ${g[1]}G` : ''}`; }).join(' y ');
+    };
+    for (const [label, n] of Object.entries(byType)) { const ct = cableTxt(label); cur = C(byTypeC[label].concat(cables.filter((c) => c._used))); L(`${n} puertos ${label}${ct ? `, incluye ${ct}` : ''},`); }
     const fcs = has(/Fibre Channel|canal de fibra/i).filter((f) => /port|puerto/i.test(f.desc));
     if (fcs.length) {
       cur = C(fcs);
@@ -305,13 +315,17 @@
       const iface = /NVMe/i.test(d.desc) ? 'NVMe' : /SAS/i.test(d.desc) ? 'SAS' : /SATA/i.test(d.desc) ? 'SATA' : '';
       const use = /Mixed Use|uso mixto/i.test(d.desc) ? ' tipo Mixed Use' : /Read Intensive|lectura intensiva/i.test(d.desc) ? ' tipo Read Intensive' : '';
       const kind = /HDD|rpm/i.test(d.desc) ? 'discos' : 'unidades SSD';
+      const rpm = kind === 'discos' ? (/(\d+(?:[.,]\d+)?)\s*K\b/i.exec(d.desc) || [])[1] : null;
       nData += d.qty; cur = C([d]);
-      L(`${d.qty} ${d.qty === 1 ? (kind === 'discos' ? 'disco' : 'unidad SSD') : kind} ${iface}${use} de ${cap}${d.qty > 1 ? ' c/u' : ''}${isVX ? ', para almacenamiento VSAN ESA' : ''},`.replace(/\s+/g, ' '));
+      L(`${d.qty} ${d.qty === 1 ? (kind === 'discos' ? 'disco' : 'unidad SSD') : kind} ${iface}${use} de ${cap}${rpm ? ` ${rpm.replace(',', '.')}K RPM` : ''}${d.qty > 1 ? ' c/u' : ''}${isVX ? ', para almacenamiento VSAN ESA' : ''},`.replace(/\s+/g, ' '));
     }
-    const ch = has(/(\d+)x2[.,]5"/i)[0];
+    // Bahías: según los backplanes del configurador (issue #4); si no hay, según el chasis
+    const BAYRE = /(\d+)\s*x\s*(?:\d+\s*x\s*)?[23][.,]5"/i;
+    const bps = has(/Backplane|\bBP\b|Placa (?:posterior|base) .*(?:SAS|SATA|NVMe)/i).filter((f) => BAYRE.test(f.desc) && !/\bMI-|Bracket|Soporte|Cable/i.test(f.desc));
+    const ch = bps.length ? { code: bps.map((b) => b.code), desc: '' } : has(/Chassis|Chasis/i).filter((f) => BAYRE.test(f.desc))[0];
     if (ch && nData) {
-      cur = C([ch]);
-      const bays = +/(\d+)x2[.,]5"/i.exec(ch.desc)[1];
+      cur = bps.length ? C(bps) : C([ch]);
+      const bays = bps.length ? bps.reduce((s, b) => s + (+BAYRE.exec(b.desc)[1]) * (b.qty || 1), 0) : +BAYRE.exec(ch.desc)[1];
       const free = bays - nData - mtDrives.reduce((s, d) => s + d.qty, 0);
       if (free > 0) L(`${free} bahías libres para crecimiento en discos,`);
     }
