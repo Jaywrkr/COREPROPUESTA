@@ -175,6 +175,25 @@ td.phantom::after { content: ""; }
 .linkbtn:hover { text-decoration: underline; }
 .warn .wbody { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .warn .wcode { font-family: var(--font-mono); font-size: 12px; }
+.modal { position: fixed; inset: 0; z-index: 70; background: rgba(18,21,28,.45); display: grid; place-items: center; padding: 16px; }
+.modalcard { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-raised); width: min(560px, 100%); padding: 24px; display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 32px); overflow: auto; }
+.modalcard h2 { margin: 0; font-size: 20px; line-height: 26px; font-weight: 600; color: var(--brand); }
+.modalcard label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--ink-muted); }
+.modalcard input, .modalcard textarea, .lcard input, .lcard select, .lcard textarea { border: 1px solid var(--border-strong); border-radius: 0; padding: 8px 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; min-width: 0; }
+.quote { font-family: var(--xl); font-size: 13px; background: var(--surface-raised); border-left: 3px solid var(--brand); padding: 10px 12px; overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-mono); font-size: 11.5px; border: 1px solid var(--border); border-radius: 2px; padding: 2px 6px; background: var(--surface-raised); color: var(--ink-2); }
+.mrow { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.lcards { display: flex; flex-direction: column; gap: 14px; }
+.lcard { border: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
+.lhead { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
+.ldiff { display: grid; grid-template-columns: 1fr 24px 1fr; gap: 6px 8px; font-family: var(--xl); font-size: 12.5px; align-items: start; }
+.ldiff .a { color: var(--ink-muted); text-decoration: line-through; overflow-wrap: anywhere; }
+.ldiff .b { color: var(--ink); overflow-wrap: anywhere; }
+.lform { display: grid; grid-template-columns: 150px minmax(0, 1fr) 150px; gap: 10px; align-items: end; border-top: 1px solid var(--border); padding-top: 12px; }
+.lform label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--ink-muted); min-width: 0; }
+.lform .mrow { grid-column: 1 / -1; }
+@media (max-width: 700px) { .lform { grid-template-columns: 1fr; } .ldiff { grid-template-columns: 1fr; } .ldiff .arrow { display: none; } }
 @media (max-width: 700px) { .rform { grid-template-columns: 1fr; } }
 @media (max-width: 900px) {
   body { overflow: auto; }
@@ -276,6 +295,7 @@ td.phantom::after { content: ""; }
           <button class="tab" role="tab" id="tabP" aria-selected="true">Propuesta</button>
           <button class="tab" role="tab" id="tabL" aria-selected="false">_Lenovo</button>
           <button class="tab" role="tab" id="tabR" aria-selected="false">Reglas</button>
+          <button class="tab" role="tab" id="tabA" aria-selected="false" hidden>Aprendizaje</button>
           <div class="status" id="status"></div>
         </div>
       </div>
@@ -284,6 +304,17 @@ td.phantom::after { content: ""; }
   </div>
 </div>
 <div class="menu" id="menu" hidden></div>
+<div class="modal" id="fbModal" hidden>
+  <form class="modalcard" id="fbForm">
+    <h2>Comentar esta línea</h2>
+    <p class="note">Tu comentario le llega al administrador con el contexto de la configuración, para corregir la regla y que la próxima vez salga bien.</p>
+    <div class="quote" id="fbLine"></div>
+    <div class="chips" id="fbCodes"></div>
+    <label for="fbAutor">Tu nombre<input id="fbAutor" autocomplete="name" required></label>
+    <label for="fbText">¿Cómo debería ser?<textarea id="fbText" rows="4" required placeholder="Ej.: debe decir 1 tarjeta OCP con 4 puertos 1Gb RJ-45"></textarea></label>
+    <div class="mrow"><button type="button" class="btn btn-secondary" id="fbCancel">Cancelar</button><button class="btn btn-primary" type="submit" id="fbSend">Enviar comentario</button></div>
+  </form>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -566,24 +597,28 @@ td.phantom::after { content: ""; }
     const has = (re) => all.filter((f) => re.test(f.desc));
     const warn = [];
     const { model, family, u } = modelOf(cfg);
-    const lines = [];
+    const lines = [], codes = [];
+    let cur = [];
+    const C = (arr) => (arr || []).filter(Boolean).map((f) => String(f.code || f.pn || f));
+    const L = (t) => { lines.push(t); codes.push(cur.slice()); };
     const isMT = /\bMT\b|MEMORY\s*TIERING|TIERING/i.test(`${cfg.name} ${cfg.cfgName || ''}`);
     const isVX = /^VX|^HX/.test(model);
     const isStorage = /D4390/.test(model);
-    lines.push(`Lenovo ${family} ${model}${u ? `, para rack (${u}U)` : ''},`);
+    cur = [cfg.cto];
+    L(`Lenovo ${family} ${model}${u ? `, para rack (${u}U)` : ''},`);
 
     // CPU
     let cpus = 0;
     const cpu = has(/Xeon|EPYC/i).filter((f) => !/Heatsink|Disipador|Dummy|Clip/i.test(f.desc))[0];
     if (cpu) {
-      cpus = cpu.qty;
+      cpus = cpu.qty; cur = C([cpu]);
       const m = /(Xeon|EPYC)\s+(\S+)\s+(\d+)C\b.*?([\d.,]+)\s*GHz/i.exec(cpu.desc);
       if (m) {
         const brand = m[1].toUpperCase() === 'EPYC' ? 'AMD EPYC' : 'Intel Xeon';
         const ghz = m[4].replace(',', '.');
-        if (cpus === 1) lines.push(`Un procesador ${brand} ${m[2]} (${m[3]} cores/${ghz}Ghz), expandible a 2 procesadores,`);
-        else lines.push(`${NUMW[cpus] || cpus} procesadores ${brand} ${m[2]} de ${m[3]} cores/${ghz}Ghz (total ${cpus * m[3]} cores),`);
-      } else { lines.push(`${cpus} x ${cpu.desc},`); warn.push(`Procesador no reconocido: "${cpu.desc}"`); }
+        if (cpus === 1) L(`Un procesador ${brand} ${m[2]} (${m[3]} cores/${ghz}Ghz), expandible a 2 procesadores,`);
+        else L(`${NUMW[cpus] || cpus} procesadores ${brand} ${m[2]} de ${m[3]} cores/${ghz}Ghz (total ${cpus * m[3]} cores),`);
+      } else { L(`${cpus} x ${cpu.desc},`); warn.push(`Procesador no reconocido: "${cpu.desc}"`); }
     } else if (!isStorage) warn.push('No encontré el procesador en la configuración.');
 
     // Discos de datos
@@ -599,21 +634,22 @@ td.phantom::after { content: ""; }
       }
       const slots = (/^SR6|^VX6|^HX6/.test(model) ? 16 : 12) * Math.max(cpus, 1);
       const maxSlots = (/^SR6|^VX6|^HX6/.test(model) ? 16 : 12) * 2;
+      cur = C(mem);
       if (isMT) {
-        mtDrives = drives.filter((d) => /Mixed Use|uso mixto/i.test(d.desc) && /NVMe/i.test(d.desc));
+        mtDrives = drives.filter((d) => /Mixed Use|uso mixto/i.test(d.desc) && /NVMe/i.test(d.desc)); cur = C(mem.concat(mtDrives));
         const k = mtDrives.reduce((s, d) => s + d.qty, 0);
         const cap = mtDrives[0] ? fmtCap((/(\d+(?:[.,]\d+)?)\s*(TB|GB)\b/.exec(mtDrives[0].desc) || ['', '?', 'TB']).slice(1).join('')) : '';
-        lines.push(`${fmtGB(total * 2)} con Memory Tiering (${n} x ${size}GB TruDDR5${speed ? ` ${speed}Mhz` : ''} + ${k} x NVMe de ${cap}${k > 1 ? ' en RAID-1' : ''}),`);
+        L(`${fmtGB(total * 2)} con Memory Tiering (${n} x ${size}GB TruDDR5${speed ? ` ${speed}Mhz` : ''} + ${k} x NVMe de ${cap}${k > 1 ? ' en RAID-1' : ''}),`);
         if (!k) warn.push('Configuración con Memory Tiering sin unidad NVMe Mixed Use detectada; revisa la línea de memoria.');
       } else {
         const free = slots - n;
-        lines.push(`${total}GB de memoria RAM (${n} x ${size}GB TruDDR5${speed ? ` ${speed}Mhz` : ''}), ${free} zócalos libres${cpus === 1 ? `, con el segundo procesador se habilitan ${maxSlots - slots} zócalos adicionales` : ''},`);
+        L(`${total}GB de memoria RAM (${n} x ${size}GB TruDDR5${speed ? ` ${speed}Mhz` : ''}), ${free} zócalos libres${cpus === 1 ? `, con el segundo procesador se habilitan ${maxSlots - slots} zócalos adicionales` : ''},`);
       }
     } else if (!isStorage) warn.push('No encontré memoria RAM en la configuración.');
 
     // Red
     const nics = has(/Ethernet|Network Adapter|Adaptador de red/i).filter((f) => /port|puerto/i.test(f.desc) && !/Riser|Cable|Filler|Relleno|PXE|Cage/i.test(f.desc));
-    const byType = {};
+    const byType = {}, byTypeC = {};
     for (const nc of nics) {
       const pm = /(\d+)\s*-?\s*port|(\d+)\s*puertos/i.exec(nc.desc);
       const ports = pm ? +(pm[1] || pm[2]) : 2;
@@ -623,31 +659,34 @@ td.phantom::after { content: ""; }
       else if (/10\s*GBASE-T|10\s*GbE.*RJ-?45/i.test(nc.desc)) label = 'Ethernet 10Gb RJ-45';
       else if (/10\s*GbE.*SFP\+/i.test(nc.desc)) label = 'Ethernet 10Gb SFP+';
       else if (/\b1\s*GbE/i.test(nc.desc)) label = 'Ethernet 1Gb RJ-45';
-      byType[label] = (byType[label] || 0) + ports * nc.qty;
+      byType[label] = (byType[label] || 0) + ports * nc.qty; (byTypeC[label] = byTypeC[label] || []).push(nc);
     }
-    for (const [label, n] of Object.entries(byType)) lines.push(`${n} puertos ${label},`);
+    for (const [label, n] of Object.entries(byType)) (cur = C(byTypeC[label])), L(`${n} puertos ${label},`);
     const fcs = has(/Fibre Channel|canal de fibra/i).filter((f) => /port|puerto/i.test(f.desc));
     if (fcs.length) {
+      cur = C(fcs);
       let n = 0, sp = '';
       for (const f of fcs) { const pm = /(\d+)\s*-?\s*port|(\d+)\s*puertos/i.exec(f.desc); n += (pm ? +(pm[1] || pm[2]) : 2) * f.qty; const s = /(\d+)\s*Gb/i.exec(f.desc); if (s) sp = s[1]; }
-      lines.push(`${n} puertos ${sp === '32' ? '16/32' : sp}Gb Fibre Channel,`);
+      L(`${n} puertos ${sp === '32' ? '16/32' : sp}Gb Fibre Channel,`);
     }
 
     // Arranque M.2
     const m2 = has(/M\.2/i).filter((f) => /SSD/i.test(f.desc) && !/HeatSink|Disipador|Cage|Tray|Interposer|Kit|Cable|Enablement|Habilitaci|Bandeja|Jaula/i.test(f.desc));
     if (m2.length) {
+      cur = C(m2);
       const n = m2.reduce((s, d) => s + d.qty, 0);
       const cap = fmtCap((/(\d+(?:[.,]\d+)?)\s*(TB|GB)\b/.exec(m2[0].desc) || ['', '480', 'GB']).slice(1).join(''));
       const iface = /NVMe/i.test(m2[0].desc) ? 'NVMe ' : '';
-      lines.push(n > 1 ? `${n} unidades SSD ${iface}M.2 de ${cap} (en RAID-1) para ${isVX || /VMW/i.test(cfg.name) ? 'hipervisor' : 'sistema operativo o hipervisor'},`
+      L(n > 1 ? `${n} unidades SSD ${iface}M.2 de ${cap} (en RAID-1) para ${isVX || /VMW/i.test(cfg.name) ? 'hipervisor' : 'sistema operativo o hipervisor'},`
         : `1 unidad SSD ${iface}M.2 de ${cap} para ${isVX || /VMW/i.test(cfg.name) ? 'hipervisor' : 'sistema operativo o hipervisor'},`);
     }
 
     // RAID
     const raid = has(/RAID\s*\d{3,4}-\d+i/i).filter((f) => !/SuperCap|Cable/i.test(f.desc))[0];
     if (raid) {
+      cur = C([raid]);
       const c = /(\d+)\s*GB\s*Flash/i.exec(raid.desc);
-      lines.push(c ? `Controlador de discos con ${c[1]}GB de caché, maneja RAID-0/1/5/6/10,` : 'Controlador de discos RAID-0/1/10/5,');
+      L(c ? `Controlador de discos con ${c[1]}GB de caché, maneja RAID-0/1/5/6/10,` : 'Controlador de discos RAID-0/1/10/5,');
     }
 
     // Discos de datos (excluye los de Memory Tiering)
@@ -658,32 +697,36 @@ td.phantom::after { content: ""; }
       const iface = /NVMe/i.test(d.desc) ? 'NVMe' : /SAS/i.test(d.desc) ? 'SAS' : /SATA/i.test(d.desc) ? 'SATA' : '';
       const use = /Mixed Use|uso mixto/i.test(d.desc) ? ' tipo Mixed Use' : /Read Intensive|lectura intensiva/i.test(d.desc) ? ' tipo Read Intensive' : '';
       const kind = /HDD|rpm/i.test(d.desc) ? 'discos' : 'unidades SSD';
-      nData += d.qty;
-      lines.push(`${d.qty} ${d.qty === 1 ? (kind === 'discos' ? 'disco' : 'unidad SSD') : kind} ${iface}${use} de ${cap}${d.qty > 1 ? ' c/u' : ''}${isVX ? ', para almacenamiento VSAN ESA' : ''},`.replace(/\s+/g, ' '));
+      nData += d.qty; cur = C([d]);
+      L(`${d.qty} ${d.qty === 1 ? (kind === 'discos' ? 'disco' : 'unidad SSD') : kind} ${iface}${use} de ${cap}${d.qty > 1 ? ' c/u' : ''}${isVX ? ', para almacenamiento VSAN ESA' : ''},`.replace(/\s+/g, ' '));
     }
     const ch = has(/(\d+)x2[.,]5"/i)[0];
     if (ch && nData) {
+      cur = C([ch]);
       const bays = +/(\d+)x2[.,]5"/i.exec(ch.desc)[1];
       const free = bays - nData - mtDrives.reduce((s, d) => s + d.qty, 0);
-      if (free > 0) lines.push(`${free} bahías libres para crecimiento en discos,`);
+      if (free > 0) L(`${free} bahías libres para crecimiento en discos,`);
     }
 
     // GPU
     const gpus = has(/NVIDIA/i).filter((f) => !/Cable|Kit|Riser|Power|Bracket/i.test(f.desc));
     for (const gp of gpus) {
+      cur = C([gp]);
       const m = /NVIDIA\s+([A-Z]*\d+[A-Za-z]*(?:\s?NVL)?)\s.*?(\d+)\s*GB/i.exec(gp.desc);
-      lines.push(m ? `${gp.qty} GPU NVIDIA ${m[1]} ${m[2]}GB PCIe,` : `${gp.qty} x ${gp.desc},`);
+      L(m ? `${gp.qty} GPU NVIDIA ${m[1]} ${m[2]}GB PCIe,` : `${gp.qty} x ${gp.desc},`);
     }
 
     // Energía / ventilación
     const psu = has(/Power Supply|Fuente de alimentaci/i)[0];
-    if (psu) lines.push(psu.qty >= 2 ? `${NUMW[psu.qty] || psu.qty} fuentes de poder redundantes y hot-swap, ventiladores redundantes y hot-swap,` : '1 fuente de poder, ventiladores redundantes y hot-swap,');
+    cur = C([psu]);
+    if (psu) L(psu.qty >= 2 ? `${NUMW[psu.qty] || psu.qty} fuentes de poder redundantes y hot-swap, ventiladores redundantes y hot-swap,` : '1 fuente de poder, ventiladores redundantes y hot-swap,');
 
     // Gestión
+    cur = C(items.filter((i) => /XClarity|XCC/i.test(i.desc)));
     const allItems = items.map((i) => i.desc).join(' | ') + ' | ' + all.map((f) => f.desc).join(' | ');
-    if (/XClarity Controller Prem|XClarity Platinum|XCC\d? premier/i.test(allItems)) lines.push('Puerto de gestión remota con XClarity Premier,');
-    else lines.push('Puerto de gestión remota con XClarity Controller,');
-    if (/XClarity One/i.test(allItems)) lines.push('Gestión centralizada con XClarity One,');
+    if (/XClarity Controller Prem|XClarity Platinum|XCC\d? premier/i.test(allItems)) L('Puerto de gestión remota con XClarity Premier,');
+    else L('Puerto de gestión remota con XClarity Controller,');
+    if (/XClarity One/i.test(allItems)) (cur = C(items.filter((i) => /XClarity One/i.test(i.desc)))), L('Gestión centralizada con XClarity One,');
 
     // Garantía
     const wItems = items.map((i) => i.desc);
@@ -701,26 +744,28 @@ td.phantom::after { content: ""; }
       w = `** Garantía de hardware: ${y ? y[1] : 3} años en modalidad 5x9 con tiempo de respuesta de 24 horas laborables`;
     }
     if (kyd) w += ' y Keep Your Drive (KYD)';
-    lines.push(w);
+    cur = C(items.filter((i) => /Premier|Foundation|Essential|CSR|KYD|Keep Your Drive/i.test(i.desc)));
+    if (!cur.length) cur = [cfg.cto];
+    L(w);
 
     // Reglas del diccionario: van antes de energía / gestión / garantía
-    const custom = [];
+    const custom = [], customC = [];
     const done = new Set();
     for (const { f, r } of hit) {
       const code = String(f.code || f.pn).toUpperCase();
       if (done.has(code) || r.accion === 'ignorar' || !String(r.texto || '').trim()) { done.add(code); continue; }
       done.add(code);
       const q = f.qty || 1;
-      custom.push(String(r.texto).replace(/\{cant\}/gi, String(+q.toFixed(2))));
+      custom.push(String(r.texto).replace(/\{cant\}/gi, String(+q.toFixed(2)))); customC.push([code]);
     }
     if (custom.length) {
       let at = lines.findIndex((l) => /fuentes? de poder|Puerto de gestión|Garantía/i.test(l));
       if (at < 0) at = lines.length;
-      lines.splice(at, 0, ...custom);
+      lines.splice(at, 0, ...custom); codes.splice(at, 0, ...customC);
     }
-    const out = [];
-    lines.forEach((l) => out.push(...wrapLine(l)));
-    return { lines: out, warnings: warn, model, isVX, hasData: nData > 0, hasGPU: gpus.length > 0, isMT };
+    const out = [], outC = [];
+    lines.forEach((l, i) => { const w = wrapLine(l); out.push(...w); w.forEach(() => outC.push(codes[i] || [])); });
+    return { lines: out, codes: outC, warnings: warn, model, isVX, hasData: nData > 0, hasGPU: gpus.length > 0, isMT };
   }
 
   // ---------- modelo de propuesta por defecto ----------
@@ -745,7 +790,7 @@ td.phantom::after { content: ""; }
       d.warnings.forEach((t) => warnings.push({ level: 'medio', text: `${cfg.cto}: ${t}` }));
       blocks.push({
         kind: 'item', id: 'b' + i + '_' + Math.random().toString(36).slice(2, 6), cfg: i,
-        title: sectionTitle(cfg, d), qty: cfg.qty || 1, lines: d.lines,
+        title: sectionTitle(cfg, d), qty: cfg.qty || 1, lines: d.lines, gen: d.lines.slice(), genCodes: d.codes,
         cost: [
           { kind: 'ref', factor: 25 },
           { kind: 'free', sku: 'SERVICIO', detalle: '', cant: 8, costo: 48, factor: 40 },
@@ -1185,13 +1230,14 @@ function compute() {
   layout = E.layoutProposal(model, lenovo);
 }
 function rowsOf() { return sheet === 'P' ? layout.rows : lenovo.rows; }
-function cellAt(r, c) { if (sheet === 'R') return null; const row = rowsOf().find((x) => x.r === r); return row ? row.cells[c] : null; }
+const NOGRID = () => sheet === 'R' || sheet === 'A';
+function cellAt(r, c) { if (NOGRID()) return null; const row = rowsOf().find((x) => x.r === r); return row ? row.cells[c] : null; }
 function rowAt(r) { return rowsOf().find((x) => x.r === r) || null; }
 
 function render() {
   compute();
-  $('tabR').setAttribute('aria-selected', sheet === 'R');
-  if (sheet === 'R') { renderRules(); $('tabP').setAttribute('aria-selected', false); $('tabL').setAttribute('aria-selected', false); updateButtons(); renderSide(); renderStatus(); $('nameBox').textContent = '—'; $('fInput').value = ''; $('fInput').readOnly = true; return; }
+  $('tabR').setAttribute('aria-selected', sheet === 'R'); $('tabA').setAttribute('aria-selected', sheet === 'A');
+  if (NOGRID()) { if (sheet === 'R') renderRules(); else renderLearn(); $('tabP').setAttribute('aria-selected', false); $('tabL').setAttribute('aria-selected', false); updateButtons(); renderSide(); renderStatus(); $('nameBox').textContent = '—'; $('fInput').value = ''; $('fInput').readOnly = true; return; }
   const S = SHEETS[sheet];
   const rows = rowsOf();
   const multi = anchor.r !== sel.r || anchor.c !== sel.c;
@@ -1256,7 +1302,7 @@ function renderStatus() {
 function ctx() { const row = sheet === 'P' ? rowAt(sel.r) : null; return { row, bi: row ? row.blockRef : undefined, b: row && row.blockRef !== undefined ? model.blocks[row.blockRef] : null }; }
 function updateButtons() {
   const { row, b } = ctx(); const P = sheet === 'P';
-  if (sheet === 'R') { ['bLineAdd','bLineDel','bCostAdd','bCostDel','bNote','bText','bUp','bDown','bBlockDel','bClient'].forEach((id) => ($(id).disabled = true)); $('bUndo').disabled = !undo.length; $('bRedo').disabled = !redo.length; return; }
+  if (NOGRID()) { ['bLineAdd','bLineDel','bCostAdd','bCostDel','bNote','bText','bUp','bDown','bBlockDel','bClient'].forEach((id) => ($(id).disabled = true)); $('bUndo').disabled = !undo.length; $('bRedo').disabled = !redo.length; return; }
   const hasLines = P && b && (row.lineIdx !== undefined || (row.cells.C && /title$/.test(row.cells.C.edit || '')));
   $('bLineAdd').disabled = !(hasLines || (P && row && row.condIdx !== undefined));
   $('bLineDel').disabled = !(P && ((b && row.lineIdx !== undefined && row.lineIdx < b.lines.length) || (row && row.condIdx !== undefined && model.condiciones.length > 1)));
@@ -1303,7 +1349,7 @@ function renderSide() {
 // ---- selección y edición ----
 const sc = $('scroller');
 sc.addEventListener('mousedown', (e) => {
-  if (sheet === 'R') return;
+  if (NOGRID()) return;
   const td = e.target.closest('td'); if (!td) return;
   if (!$('editor').hidden && e.target !== $('editor')) commitEdit();
   if (e.button !== 0) return;
@@ -1311,13 +1357,13 @@ sc.addEventListener('mousedown', (e) => {
   dragging = true; render();
 });
 sc.addEventListener('mouseover', (e) => {
-  if (!dragging || sheet === 'R') return; const td = e.target.closest('td'); if (!td) return;
+  if (!dragging || NOGRID()) return; const td = e.target.closest('td'); if (!td) return;
   const n = { r: +td.dataset.r, c: td.dataset.c }; if (n.r === sel.r && n.c === sel.c) return;
   sel = n; paintSel();
 });
 document.addEventListener('mouseup', () => { if (dragging) { dragging = false; updateFormulaBar(); updateButtons(); renderStatus(); } });
-sc.addEventListener('dblclick', (e) => { if (sheet === 'R') return; const td = e.target.closest('td'); if (td) startEdit(); });
-sc.addEventListener('contextmenu', (e) => { if (sheet === 'R') return; const td = e.target.closest('td'); if (!td) return; e.preventDefault(); const n = { r: +td.dataset.r, c: td.dataset.c }; if (!inRange(n.r, n.c)) { sel = n; anchor = { ...n }; } render(); openMenu(e.clientX, e.clientY); });
+sc.addEventListener('dblclick', (e) => { if (NOGRID()) return; const td = e.target.closest('td'); if (td) startEdit(); });
+sc.addEventListener('contextmenu', (e) => { if (NOGRID()) return; const td = e.target.closest('td'); if (!td) return; e.preventDefault(); const n = { r: +td.dataset.r, c: td.dataset.c }; if (!inRange(n.r, n.c)) { sel = n; anchor = { ...n }; } render(); openMenu(e.clientX, e.clientY); });
 
 function startEdit(initial) {
   const cell = cellAt(sel.r, sel.c);
@@ -1359,7 +1405,7 @@ function move(dr, dc, extend) {
   const td = sc.querySelector(`td[data-r="${sel.r}"][data-c="${sel.c}"]`); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 document.addEventListener('keydown', (e) => {
-  if ($('work').hidden || !$('editor').hidden || sheet === 'R') return;
+  if ($('work').hidden || !$('editor').hidden || NOGRID()) return;
   if (document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
   const k = e.key;
   if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { e.preventDefault(); doUndo(); return; }
@@ -1386,7 +1432,7 @@ function paintSel() {
   $('nameBox').textContent = rangeName();
 }
 function rangeName() { const g = rng(), S = SHEETS[sheet]; return g.r1 === g.r2 && g.c1 === g.c2 ? sel.c + sel.r : `${S.cols[g.c1]}${g.r1}:${S.cols[g.c2]}${g.r2}`; }
-function editableInRange() { if (sheet === 'R') return []; const g = rng(), S = SHEETS[sheet], out = []; for (let r = g.r1; r <= g.r2; r++) for (let k = g.c1; k <= g.c2; k++) { const c = cellAt(r, S.cols[k]); if (c && c.edit) out.push(c); } return out; }
+function editableInRange() { if (NOGRID()) return []; const g = rng(), S = SHEETS[sheet], out = []; for (let r = g.r1; r <= g.r2; r++) for (let k = g.c1; k <= g.c2; k++) { const c = cellAt(r, S.cols[k]); if (c && c.edit) out.push(c); } return out; }
 const BCSS = { '1': 'border:.5pt solid #000;', '2': 'border-left:.5pt solid #000;border-right:.5pt solid #000;', '3': 'border-left:.5pt solid #000;border-right:.5pt solid #000;border-bottom:.5pt solid #000;', '4': 'border-left:.5pt solid #000;border-right:.5pt solid #000;border-top:2.0pt double #000;border-bottom:.5pt solid #000;', '5': 'border-bottom:.5pt solid #000;', '6': 'border-left:.5pt solid #000;border-right:.5pt solid #000;border-top:.5pt solid #000;' };
 const MSONF = { n2: '\\#\\,\\#\\#0\\.00', n0: '\\#\\,\\#\\#0', pct: '0\\.00%', int: '0' };
 function buildClip() {
@@ -1412,7 +1458,7 @@ function buildClip() {
   return { text: tsv.join('\r\n'), html: html.join('') };
 }
 document.addEventListener('copy', (e) => {
-  if ($('work').hidden || sheet === 'R' || !$('editor').hidden) return;
+  if ($('work').hidden || NOGRID() || !$('editor').hidden) return;
   if (document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
   const c = buildClip(); e.clipboardData.setData('text/plain', c.text); e.clipboardData.setData('text/html', c.html); e.preventDefault();
   const g = rng(); toast(`Copiado ${(g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1)} celda(s). Pégalo en Excel con su formato.`);
@@ -1434,7 +1480,7 @@ function parseTSV(t) {
   return rows;
 }
 document.addEventListener('paste', (e) => {
-  if ($('work').hidden || sheet === 'R' || !$('editor').hidden) return;
+  if ($('work').hidden || NOGRID() || !$('editor').hidden) return;
   if (document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
   const text = e.clipboardData && e.clipboardData.getData('text/plain'); if (!text) return;
   e.preventDefault();
@@ -1492,7 +1538,8 @@ $('tabL').onclick = () => { sheet = 'L'; const sub = lenovo.refs[0]; sel = sub ?
 function openMenu(x, y) {
   updateButtons();
   const items = [
-    ['Editar celda', () => startEdit(), !(cellAt(sel.r, sel.c) || {}).edit], null,
+    ['Editar celda', () => startEdit(), !(cellAt(sel.r, sel.c) || {}).edit],
+    ...(FB.on && sheet === 'P' ? [['Comentar esta línea…', openComment, false]] : []), null,
     ['Copiar   (Ctrl+C)', copyViaMenu, false], ['Pegar   (Ctrl+V)', () => toast('Para pegar usa Ctrl+V (en Mac ⌘V).'), false], null,
     ['Insertar línea debajo', A.lineAdd, $('bLineAdd').disabled], ['Eliminar línea', A.lineDel, $('bLineDel').disabled], null,
     ['Agregar fila de costo', A.costAdd, $('bCostAdd').disabled], ['Quitar fila de costo', A.costDel, $('bCostDel').disabled], null,
@@ -1566,7 +1613,7 @@ const RCOL = 'data/reglas/items';
 })();
 function regenLines() {
   if (!parsed || !model) return;
-  model.blocks.forEach((b) => { if (b.kind === 'item' && parsed.configs[b.cfg]) b.lines = E.describe(parsed.configs[b.cfg], rules).lines; });
+  model.blocks.forEach((b) => { if (b.kind === 'item' && parsed.configs[b.cfg]) { const d = E.describe(parsed.configs[b.cfg], rules); b.lines = d.lines; b.gen = d.lines.slice(); b.genCodes = d.codes; } });
 }
 let pendingRegen = false;
 function onRulesChanged(own) {
@@ -1585,7 +1632,9 @@ async function saveRule() {
   const btn = $('rSave'); btn.disabled = true;
   try {
     pendingRegen = true;
-    await rulesState.db.collection(RCOL).doc(code).set({ texto, accion, desc: desc || (rules[code] && rules[code].desc) || '', actualizado: new Date().toISOString() });
+    const data = { texto, accion, desc: desc || (rules[code] && rules[code].desc) || '', actualizado: new Date().toISOString() };
+    if (rulesState.db) await rulesState.db.collection(RCOL).doc(code).set(data);
+    else { await api('api/regla', { codigo: code, ...data }, true); rules[code] = data; onRulesChanged(true); toast('Regla guardada en GitHub. Vercel la publica en 1 minuto.'); }
     draft = { code: '', texto: '', accion: 'linea', desc: '' };
   } catch (err) {
     pendingRegen = false;
@@ -1594,15 +1643,15 @@ async function saveRule() {
   } finally { btn.disabled = false; render(); }
 }
 async function deleteRule(code) {
-  try { pendingRegen = true; await rulesState.db.collection(RCOL).doc(code).delete(); }
+  try { pendingRegen = true; if (rulesState.db) await rulesState.db.collection(RCOL).doc(code).delete(); else { await api('api/regla', { codigo: code, eliminar: true }, true); delete rules[code]; onRulesChanged(true); } }
   catch (_) { pendingRegen = false; toast('No se pudo eliminar la regla.'); }
 }
 function renderRules() {
   const list = Object.entries(rules).sort((a, b) => a[0].localeCompare(b[0]));
-  const ed = rulesState.canEdit && rulesState.db;
+  const ed = (rulesState.canEdit && rulesState.db) || (!rulesState.db && FB.on && FB.adminKey);
   let h = `<div class="rules"><div style="display:flex;flex-direction:column;gap:8px"><h2>Reglas de descripción</h2>
     <p>Cada regla dice qué texto pone la app cuando un configurador trae ese código de Lenovo. Manda sobre las reglas incorporadas y se aplica para todo el equipo desde el siguiente archivo que se suba. Usa <span class="mono">{cant}</span> para la cantidad por servidor.</p></div>`;
-  if (!rulesState.db && rulesState.source === 'repo') h += `<p class="note">En esta versión las reglas se leen del archivo <span class="mono">reglas.json</span> del repositorio. Para agregar o cambiar una, edita ese archivo en GitHub; el sitio se actualiza solo al guardar.</p>`;
+  if (!rulesState.db && rulesState.source === 'repo') h += `<p class="note">Las reglas viven en <span class="mono">reglas.json</span> del repositorio. ${ed ? 'Como administrador, lo que guardes aquí se escribe en GitHub y Vercel lo publica en un minuto.' : 'Para editarlas entra a la pestaña Aprendizaje con la clave de administrador.'}</p>`;
   else if (!rulesState.db) h += `<p class="err">Las reglas compartidas no están disponibles en esta vista.</p>`;
   else if (rulesState.error) h += `<p class="err">${esc(rulesState.error)}</p>`;
   if (ed) h += `<form class="rform" id="rForm">
@@ -1625,6 +1674,151 @@ function renderRules() {
     b.dataset.confirm = '1'; b.textContent = '¿Seguro? Eliminar';
   }));
 }
+
+// ---- aprendizaje: comentarios, correcciones y bandeja (solo versión web con API) ----
+const FB = { on: false, admin: false, adminKey: null, items: null, loading: false, err: '', lastSent: '' };
+try { FB.adminKey = sessionStorage.getItem('cp_admin') || null; } catch (_) {}
+(async () => {
+  if (window.claude && window.claude.use) return;
+  try { const r = await fetch('api/ping', { cache: 'no-store' }); if (!r.ok) return; const j = await r.json(); FB.on = !!j.feedback; FB.admin = !!j.admin; } catch (_) {}
+  $('tabA').hidden = !(FB.on && FB.admin);
+})();
+async function api(url, data, admin) {
+  const h = { 'Content-Type': 'application/json' };
+  if (admin) h['x-admin'] = FB.adminKey || ''; else h['x-clave'] = PASSWORD || '';
+  const r = await fetch(url, { method: data === undefined ? 'GET' : 'POST', headers: h, body: data === undefined ? undefined : JSON.stringify(data) });
+  let j = {}; try { j = await r.json(); } catch (_) {}
+  if (!r.ok) { const e = new Error(j.error || `Error ${r.status}`); e.status = r.status; throw e; }
+  return j;
+}
+const getName = () => { try { return localStorage.getItem('cp_nombre') || ''; } catch (_) { return ''; } };
+const setName = (v) => { try { localStorage.setItem('cp_nombre', v); } catch (_) {} };
+function descOf(cfg, code) {
+  if (!cfg) return '';
+  for (const f of [...cfg.features, ...cfg.items.map((i) => ({ code: i.pn, desc: i.desc })), ...cfg.items.flatMap((i) => i.features)]) if (String(f.code).toUpperCase() === String(code).toUpperCase()) return f.desc;
+  return '';
+}
+function lineCtx(bi, li) {
+  const b = model.blocks[bi]; if (!b) return { codes: [] };
+  const cfg = b.kind === 'item' ? parsed.configs[b.cfg] : null;
+  const text = (b.lines || [])[li] ?? '';
+  let codes = [];
+  if (b.gen) { let k = b.gen.indexOf(text); if (k < 0) k = li; codes = (b.genCodes || [])[k] || []; }
+  return { cfg, text, codes: codes.map((c) => ({ code: c, desc: descOf(cfg, c) })) };
+}
+let fbTarget = null;
+function openComment() {
+  const row = rowAt(sel.r); const C = row && row.cells.C;
+  const bi = row ? row.blockRef : undefined;
+  const ctxL = bi !== undefined && row.lineIdx !== undefined ? lineCtx(bi, row.lineIdx) : { codes: [], cfg: bi !== undefined && model.blocks[bi].kind === 'item' ? parsed.configs[model.blocks[bi].cfg] : null };
+  const linea = C && typeof C.v === 'string' ? C.v : '';
+  fbTarget = { linea, codigos: ctxL.codes, cfg: ctxL.cfg };
+  $('fbLine').textContent = linea || `(fila ${sel.r} sin texto)`;
+  $('fbCodes').innerHTML = ctxL.codes.map((c) => `<span class="chip" title="${esc(c.desc)}">${esc(c.code)}</span>`).join('');
+  $('fbAutor').value = getName(); $('fbText').value = '';
+  $('fbModal').hidden = false; setTimeout(() => ($('fbAutor').value ? $('fbText') : $('fbAutor')).focus(), 20);
+}
+$('fbCancel').onclick = () => ($('fbModal').hidden = true);
+$('fbModal').addEventListener('mousedown', (e) => { if (e.target === $('fbModal')) $('fbModal').hidden = true; });
+$('fbModal').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('fbModal').hidden = true; e.stopPropagation(); });
+$('fbForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const autor = $('fbAutor').value.trim(), comentario = $('fbText').value.trim(); if (!autor || !comentario) return;
+  setName(autor); const btn = $('fbSend'); btn.disabled = true;
+  try {
+    const cfg = fbTarget.cfg;
+    await api('api/feedback', { tipo: 'comentario', autor, comentario, linea: fbTarget.linea, codigos: fbTarget.codigos, archivo: fileName, cto: cfg ? cfg.cto : '', modelo: cfg ? (cfg.cfgName || cfg.name) : '' });
+    $('fbModal').hidden = true; toast('Comentario enviado. Gracias.');
+  } catch (err) { toast('No se pudo enviar: ' + err.message); }
+  finally { btn.disabled = false; }
+});
+function collectChanges() {
+  const out = [];
+  model.blocks.forEach((b) => {
+    if (b.kind !== 'item' || !b.gen) return;
+    const cfg = parsed.configs[b.cfg];
+    const cur = b.lines.map((l) => String(l || '')).filter((l) => l.trim());
+    const gen = b.gen.filter((l) => l.trim());
+    const removed = gen.map((l, i) => ({ l, codes: (b.genCodes || [])[b.gen.indexOf(l)] || [] })).filter((x) => !cur.includes(x.l));
+    const added = cur.filter((l) => !gen.includes(l));
+    const n = Math.max(removed.length, added.length);
+    const cambios = [];
+    for (let i = 0; i < n; i++) cambios.push({ antes: removed[i] ? removed[i].l : '', despues: added[i] || '', codigos: removed[i] ? removed[i].codes : [] });
+    if (cambios.length) out.push({ cfg, cambios });
+  });
+  return out;
+}
+function reportCorrections() {
+  if (!FB.on) return;
+  const groups = collectChanges(); if (!groups.length) return;
+  const key = JSON.stringify(groups.map((g) => g.cambios)); if (key === FB.lastSent) return; FB.lastSent = key;
+  for (const g of groups) {
+    const codes = [...new Set(g.cambios.flatMap((c) => c.codigos))].map((c) => ({ code: c, desc: descOf(g.cfg, c) }));
+    api('api/feedback', { tipo: 'correccion', autor: getName() || 'sin nombre', archivo: fileName, cto: g.cfg.cto, modelo: g.cfg.cfgName || g.cfg.name, cambios: g.cambios, codigos: codes }).catch(() => {});
+  }
+}
+async function loadLearn() {
+  FB.loading = true; FB.err = ''; render();
+  try { const j = await api('api/feedback', undefined, true); FB.items = j.items; }
+  catch (e) { FB.err = e.status === 401 ? 'Clave de administrador incorrecta.' : e.message; if (e.status === 401) { FB.adminKey = null; try { sessionStorage.removeItem('cp_admin'); } catch (_) {} } }
+  FB.loading = false; render();
+}
+function renderLearn() {
+  let h = `<div class="rules"><div style="display:flex;flex-direction:column;gap:8px"><h2>Aprendizaje</h2>
+    <p>Comentarios de los vendedores y correcciones que hicieron antes de descargar. Convierte cada uno en regla para que la próxima propuesta salga bien para todos, o ciérralo si no aplica. Cada elemento es un issue en GitHub.</p></div>`;
+  if (!FB.adminKey) {
+    h += `<form class="rform" id="aForm" style="grid-template-columns:minmax(0,320px) auto"><label>Clave de administrador<input type="password" id="aKey" autocomplete="off"></label><button class="btn btn-primary" type="submit">Abrir bandeja</button>${FB.err ? `<span class="hint err">${esc(FB.err)}</span>` : ''}</form></div>`;
+    $('sheet').innerHTML = h;
+    $('aForm').addEventListener('submit', (e) => { e.preventDefault(); FB.adminKey = $('aKey').value; try { sessionStorage.setItem('cp_admin', FB.adminKey); } catch (_) {} loadLearn(); });
+    setTimeout(() => $('aKey') && $('aKey').focus(), 20);
+    return;
+  }
+  h += `<div class="mrow" style="justify-content:flex-start"><button class="btn btn-secondary" id="aReload">${FB.loading ? 'Cargando…' : 'Actualizar'}</button><button class="linkbtn" id="aOut">Salir de administrador</button></div>`;
+  if (FB.err) h += `<p class="err">${esc(FB.err)}</p>`;
+  if (FB.items && !FB.items.length) h += `<p class="note">No hay pendientes. Todo lo que comentaron ya está atendido.</p>`;
+  h += '<div class="lcards">';
+  for (const it of FB.items || []) {
+    const d = it.datos || {};
+    const codes = d.codigos || [];
+    const sugerido = d.tipo === 'correccion' ? ((d.cambios || []).find((c) => c.despues) || {}).despues || '' : '';
+    h += `<div class="lcard" data-n="${it.numero}">
+      <div class="lhead"><span class="tag ${d.tipo === 'correccion' ? '' : 'ok'}">${d.tipo === 'correccion' ? 'Corrección' : 'Comentario'}</span><span>${esc(d.autor || '—')}</span><span class="mono">${esc(String(it.creado || '').slice(0, 10))}</span><span class="mono">${esc(d.archivo || '')}</span><a class="linkbtn" href="${esc(it.url)}" target="_blank" rel="noopener">#${it.numero} en GitHub</a></div>`;
+    if (d.tipo === 'correccion') h += `<div class="ldiff">${(d.cambios || []).map((c) => `<span class="a">${esc(c.antes || '(no existía)')}</span><span class="arrow">→</span><span class="b">${esc(c.despues || '(eliminada)')}</span>`).join('')}</div>`;
+    else h += `<div class="quote">${esc(d.linea || '(sin línea)')}</div><div style="font-size:14px;line-height:1.5">${esc(d.comentario || '')}</div>`;
+    if (codes.length) h += `<div class="chips">${codes.map((c) => `<span class="chip" title="${esc(c.desc || '')}">${esc(c.code)}</span>`).join('')}</div>`;
+    h += `<form class="lform" data-form="${it.numero}">
+        <label>Código Lenovo${codes.length ? `<select name="codigo">${codes.map((c) => `<option value="${esc(c.code)}" data-desc="${esc(c.desc || '')}">${esc(c.code)}</option>`).join('')}</select>` : '<input name="codigo" placeholder="B8P9" style="text-transform:uppercase">'}</label>
+        <label>Texto en la propuesta<input name="texto" value="${esc(sugerido)}" placeholder="{cant} puertos Ethernet 100Gb QSFP56,"></label>
+        <label>Acción<select name="accion"><option value="linea">Agregar línea</option><option value="ignorar">No mencionar</option></select></label>
+        <div class="mrow"><button type="button" class="btn btn-secondary" data-close="${it.numero}">Cerrar sin regla</button><button class="btn btn-primary" type="submit">Convertir en regla</button></div>
+      </form></div>`;
+  }
+  h += '</div></div>';
+  $('sheet').innerHTML = h;
+  $('aReload').onclick = loadLearn;
+  $('aOut').onclick = () => { FB.adminKey = null; FB.items = null; try { sessionStorage.removeItem('cp_admin'); } catch (_) {} render(); };
+  $('sheet').querySelectorAll('form[data-form]').forEach((f) => f.addEventListener('submit', async (e) => {
+    e.preventDefault(); const n = +f.dataset.form; const fd = new FormData(f);
+    const codigo = String(fd.get('codigo') || '').trim().toUpperCase(); const texto = String(fd.get('texto') || ''); const accion = String(fd.get('accion'));
+    const opt = f.querySelector('select[name="codigo"] option:checked'); const desc = opt ? opt.dataset.desc : '';
+    if (!/^[A-Z0-9][A-Z0-9-]{1,19}$/.test(codigo)) return toast('Escribe un código Lenovo válido.');
+    if (accion === 'linea' && !texto.trim()) return toast('Escribe el texto de la regla.');
+    f.querySelectorAll('button').forEach((b) => (b.disabled = true));
+    try {
+      await api('api/regla', { codigo, texto, accion, desc, numero: n }, true);
+      rules[codigo] = { texto, accion, desc }; FB.items = FB.items.filter((x) => x.numero !== n);
+      if (model) { regenLines(); }
+      toast(`Regla ${codigo} guardada. Vercel la publica en 1 minuto.`); render();
+    } catch (err) { toast('No se pudo guardar: ' + err.message); f.querySelectorAll('button').forEach((b) => (b.disabled = false)); }
+  }));
+  $('sheet').querySelectorAll('[data-close]').forEach((b) => (b.onclick = async () => {
+    if (!b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = '¿Seguro? Cerrar'; return; }
+    const n = +b.dataset.close; b.disabled = true;
+    try { await api('api/cerrar', { numero: n }, true); FB.items = FB.items.filter((x) => x.numero !== n); render(); toast('Cerrado.'); }
+    catch (err) { toast('No se pudo cerrar: ' + err.message); b.disabled = false; }
+  }));
+}
+$('tabA').onclick = () => { sheet = 'A'; render(); if (FB.adminKey && !FB.items && !FB.loading) loadLearn(); };
 // ---- descarga ----
 let downloads = null;
 (async () => { try { downloads = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (_) { downloads = null; } })();
@@ -1643,6 +1837,7 @@ $('bDownload').onclick = async () => {
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }
+    reportCorrections();
   } catch (err) { toast('No se pudo generar el Excel: ' + (err.message || err)); }
   finally { btn.disabled = false; }
 };

@@ -29,6 +29,33 @@ Cuando un configurador trae un componente que la app no sabe describir, aparece 
 - `"accion": "ignorar"` hace que el componente no se mencione.
 - Una regla manda sobre las reglas incorporadas del motor.
 
+## Aprendizaje: comentarios y correcciones
+
+- **Comentar:** clic derecho en una línea → *Comentar esta línea…*. Se crea un issue en este repo (etiquetas `feedback` + `comentario`) con la línea, el comentario, el archivo y los códigos Lenovo que la generaron.
+- **Correcciones automáticas:** al descargar, si el vendedor cambió líneas generadas, se crea un issue `correccion` con el antes → después.
+- **Bandeja:** pestaña *Aprendizaje* (clave de administrador). Cada elemento se puede **convertir en regla** (commit a `reglas.json` + cierra el issue; Vercel publica en ~1 minuto) o **cerrar sin regla**.
+
+### Configuración en Vercel (Settings → Environment Variables, entorno Production)
+
+| Variable | Valor |
+|---|---|
+| `GITHUB_TOKEN` | Token *fine-grained* de GitHub, solo para este repo, con permisos **Issues: Read and write** y **Contents: Read and write** |
+| `APP_CLAVE` | La clave de acceso de la app (la misma de los archivos) |
+| `ADMIN_CLAVE` | Una clave distinta, solo para quien administra la bandeja |
+| `GITHUB_REPO` | Opcional. Por defecto `Jaywrkr/COREPROPUESTA` |
+
+Después de agregarlas, redeploy (Deployments → ⋯ → Redeploy). Sin `GITHUB_TOKEN` y `APP_CLAVE` la app funciona igual, solo sin comentarios ni bandeja.
+
+### API
+
+| Ruta | Uso |
+|---|---|
+| `GET /api/ping` | Indica si la bandeja está configurada |
+| `POST /api/feedback` | Crea comentario/corrección (header `x-clave`) |
+| `GET /api/feedback` | Lista pendientes (header `x-admin`) |
+| `POST /api/regla` | Crea/edita/elimina una regla en `reglas.json` (header `x-admin`) |
+| `POST /api/cerrar` | Cierra un pendiente sin regla (header `x-admin`) |
+
 ## Estructura
 
 | Ruta | Qué es |
@@ -36,6 +63,7 @@ Cuando un configurador trae un componente que la app no sabe describir, aparece 
 | `index.html` | La app ya armada (lo que publica Vercel) |
 | `vault.json` | Plantilla oficial y firma, **cifradas** con la clave del sistema |
 | `reglas.json` | Reglas de descripción del equipo |
+| `api/` | Funciones de Vercel para comentarios, bandeja y reglas |
 | `src/engine.js` | Motor: lee el configurador, arma la descripción y el Excel |
 | `src/officecrypt.js` | Cifrado de Office (ECMA-376 Agile) para la descarga |
 | `src/app.src.html` | Interfaz |

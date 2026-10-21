@@ -175,6 +175,25 @@ td.phantom::after { content: ""; }
 .linkbtn:hover { text-decoration: underline; }
 .warn .wbody { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .warn .wcode { font-family: var(--font-mono); font-size: 12px; }
+.modal { position: fixed; inset: 0; z-index: 70; background: rgba(18,21,28,.45); display: grid; place-items: center; padding: 16px; }
+.modalcard { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-raised); width: min(560px, 100%); padding: 24px; display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 32px); overflow: auto; }
+.modalcard h2 { margin: 0; font-size: 20px; line-height: 26px; font-weight: 600; color: var(--brand); }
+.modalcard label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--ink-muted); }
+.modalcard input, .modalcard textarea, .lcard input, .lcard select, .lcard textarea { border: 1px solid var(--border-strong); border-radius: 0; padding: 8px 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; min-width: 0; }
+.quote { font-family: var(--xl); font-size: 13px; background: var(--surface-raised); border-left: 3px solid var(--brand); padding: 10px 12px; overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-mono); font-size: 11.5px; border: 1px solid var(--border); border-radius: 2px; padding: 2px 6px; background: var(--surface-raised); color: var(--ink-2); }
+.mrow { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.lcards { display: flex; flex-direction: column; gap: 14px; }
+.lcard { border: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
+.lhead { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 12.5px; color: var(--ink-muted); }
+.ldiff { display: grid; grid-template-columns: 1fr 24px 1fr; gap: 6px 8px; font-family: var(--xl); font-size: 12.5px; align-items: start; }
+.ldiff .a { color: var(--ink-muted); text-decoration: line-through; overflow-wrap: anywhere; }
+.ldiff .b { color: var(--ink); overflow-wrap: anywhere; }
+.lform { display: grid; grid-template-columns: 150px minmax(0, 1fr) 150px; gap: 10px; align-items: end; border-top: 1px solid var(--border); padding-top: 12px; }
+.lform label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--ink-muted); min-width: 0; }
+.lform .mrow { grid-column: 1 / -1; }
+@media (max-width: 700px) { .lform { grid-template-columns: 1fr; } .ldiff { grid-template-columns: 1fr; } .ldiff .arrow { display: none; } }
 @media (max-width: 700px) { .rform { grid-template-columns: 1fr; } }
 @media (max-width: 900px) {
   body { overflow: auto; }
@@ -276,6 +295,7 @@ td.phantom::after { content: ""; }
           <button class="tab" role="tab" id="tabP" aria-selected="true">Propuesta</button>
           <button class="tab" role="tab" id="tabL" aria-selected="false">_Lenovo</button>
           <button class="tab" role="tab" id="tabR" aria-selected="false">Reglas</button>
+          <button class="tab" role="tab" id="tabA" aria-selected="false" hidden>Aprendizaje</button>
           <div class="status" id="status"></div>
         </div>
       </div>
@@ -284,6 +304,17 @@ td.phantom::after { content: ""; }
   </div>
 </div>
 <div class="menu" id="menu" hidden></div>
+<div class="modal" id="fbModal" hidden>
+  <form class="modalcard" id="fbForm">
+    <h2>Comentar esta línea</h2>
+    <p class="note">Tu comentario le llega al administrador con el contexto de la configuración, para corregir la regla y que la próxima vez salga bien.</p>
+    <div class="quote" id="fbLine"></div>
+    <div class="chips" id="fbCodes"></div>
+    <label for="fbAutor">Tu nombre<input id="fbAutor" autocomplete="name" required></label>
+    <label for="fbText">¿Cómo debería ser?<textarea id="fbText" rows="4" required placeholder="Ej.: debe decir 1 tarjeta OCP con 4 puertos 1Gb RJ-45"></textarea></label>
+    <div class="mrow"><button type="button" class="btn btn-secondary" id="fbCancel">Cancelar</button><button class="btn btn-primary" type="submit" id="fbSend">Enviar comentario</button></div>
+  </form>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -402,13 +433,14 @@ function compute() {
   layout = E.layoutProposal(model, lenovo);
 }
 function rowsOf() { return sheet === 'P' ? layout.rows : lenovo.rows; }
-function cellAt(r, c) { if (sheet === 'R') return null; const row = rowsOf().find((x) => x.r === r); return row ? row.cells[c] : null; }
+const NOGRID = () => sheet === 'R' || sheet === 'A';
+function cellAt(r, c) { if (NOGRID()) return null; const row = rowsOf().find((x) => x.r === r); return row ? row.cells[c] : null; }
 function rowAt(r) { return rowsOf().find((x) => x.r === r) || null; }
 
 function render() {
   compute();
-  $('tabR').setAttribute('aria-selected', sheet === 'R');
-  if (sheet === 'R') { renderRules(); $('tabP').setAttribute('aria-selected', false); $('tabL').setAttribute('aria-selected', false); updateButtons(); renderSide(); renderStatus(); $('nameBox').textContent = '—'; $('fInput').value = ''; $('fInput').readOnly = true; return; }
+  $('tabR').setAttribute('aria-selected', sheet === 'R'); $('tabA').setAttribute('aria-selected', sheet === 'A');
+  if (NOGRID()) { if (sheet === 'R') renderRules(); else renderLearn(); $('tabP').setAttribute('aria-selected', false); $('tabL').setAttribute('aria-selected', false); updateButtons(); renderSide(); renderStatus(); $('nameBox').textContent = '—'; $('fInput').value = ''; $('fInput').readOnly = true; return; }
   const S = SHEETS[sheet];
   const rows = rowsOf();
   const multi = anchor.r !== sel.r || anchor.c !== sel.c;
@@ -473,7 +505,7 @@ function renderStatus() {
 function ctx() { const row = sheet === 'P' ? rowAt(sel.r) : null; return { row, bi: row ? row.blockRef : undefined, b: row && row.blockRef !== undefined ? model.blocks[row.blockRef] : null }; }
 function updateButtons() {
   const { row, b } = ctx(); const P = sheet === 'P';
-  if (sheet === 'R') { ['bLineAdd','bLineDel','bCostAdd','bCostDel','bNote','bText','bUp','bDown','bBlockDel','bClient'].forEach((id) => ($(id).disabled = true)); $('bUndo').disabled = !undo.length; $('bRedo').disabled = !redo.length; return; }
+  if (NOGRID()) { ['bLineAdd','bLineDel','bCostAdd','bCostDel','bNote','bText','bUp','bDown','bBlockDel','bClient'].forEach((id) => ($(id).disabled = true)); $('bUndo').disabled = !undo.length; $('bRedo').disabled = !redo.length; return; }
   const hasLines = P && b && (row.lineIdx !== undefined || (row.cells.C && /title$/.test(row.cells.C.edit || '')));
   $('bLineAdd').disabled = !(hasLines || (P && row && row.condIdx !== undefined));
   $('bLineDel').disabled = !(P && ((b && row.lineIdx !== undefined && row.lineIdx < b.lines.length) || (row && row.condIdx !== undefined && model.condiciones.length > 1)));
@@ -520,7 +552,7 @@ function renderSide() {
 // ---- selección y edición ----
 const sc = $('scroller');
 sc.addEventListener('mousedown', (e) => {
-  if (sheet === 'R') return;
+  if (NOGRID()) return;
   const td = e.target.closest('td'); if (!td) return;
   if (!$('editor').hidden && e.target !== $('editor')) commitEdit();
   if (e.button !== 0) return;
@@ -528,13 +560,13 @@ sc.addEventListener('mousedown', (e) => {
   dragging = true; render();
 });
 sc.addEventListener('mouseover', (e) => {
-  if (!dragging || sheet === 'R') return; const td = e.target.closest('td'); if (!td) return;
+  if (!dragging || NOGRID()) return; const td = e.target.closest('td'); if (!td) return;
   const n = { r: +td.dataset.r, c: td.dataset.c }; if (n.r === sel.r && n.c === sel.c) return;
   sel = n; paintSel();
 });
 document.addEventListener('mouseup', () => { if (dragging) { dragging = false; updateFormulaBar(); updateButtons(); renderStatus(); } });
-sc.addEventListener('dblclick', (e) => { if (sheet === 'R') return; const td = e.target.closest('td'); if (td) startEdit(); });
-sc.addEventListener('contextmenu', (e) => { if (sheet === 'R') return; const td = e.target.closest('td'); if (!td) return; e.preventDefault(); const n = { r: +td.dataset.r, c: td.dataset.c }; if (!inRange(n.r, n.c)) { sel = n; anchor = { ...n }; } render(); openMenu(e.clientX, e.clientY); });
+sc.addEventListener('dblclick', (e) => { if (NOGRID()) return; const td = e.target.closest('td'); if (td) startEdit(); });
+sc.addEventListener('contextmenu', (e) => { if (NOGRID()) return; const td = e.target.closest('td'); if (!td) return; e.preventDefault(); const n = { r: +td.dataset.r, c: td.dataset.c }; if (!inRange(n.r, n.c)) { sel = n; anchor = { ...n }; } render(); openMenu(e.clientX, e.clientY); });
 
 function startEdit(initial) {
   const cell = cellAt(sel.r, sel.c);
@@ -576,7 +608,7 @@ function move(dr, dc, extend) {
   const td = sc.querySelector(`td[data-r="${sel.r}"][data-c="${sel.c}"]`); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 document.addEventListener('keydown', (e) => {
-  if ($('work').hidden || !$('editor').hidden || sheet === 'R') return;
+  if ($('work').hidden || !$('editor').hidden || NOGRID()) return;
   if (document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
   const k = e.key;
   if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { e.preventDefault(); doUndo(); return; }
@@ -603,7 +635,7 @@ function paintSel() {
   $('nameBox').textContent = rangeName();
 }
 function rangeName() { const g = rng(), S = SHEETS[sheet]; return g.r1 === g.r2 && g.c1 === g.c2 ? sel.c + sel.r : `${S.cols[g.c1]}${g.r1}:${S.cols[g.c2]}${g.r2}`; }
-function editableInRange() { if (sheet === 'R') return []; const g = rng(), S = SHEETS[sheet], out = []; for (let r = g.r1; r <= g.r2; r++) for (let k = g.c1; k <= g.c2; k++) { const c = cellAt(r, S.cols[k]); if (c && c.edit) out.push(c); } return out; }
+function editableInRange() { if (NOGRID()) return []; const g = rng(), S = SHEETS[sheet], out = []; for (let r = g.r1; r <= g.r2; r++) for (let k = g.c1; k <= g.c2; k++) { const c = cellAt(r, S.cols[k]); if (c && c.edit) out.push(c); } return out; }
 const BCSS = { '1': 'border:.5pt solid #000;', '2': 'border-left:.5pt solid #000;border-right:.5pt solid #000;', '3': 'border-left:.5pt solid #000;border-right:.5pt solid #000;border-bottom:.5pt solid #000;', '4': 'border-left:.5pt solid #000;border-right:.5pt solid #000;border-top:2.0pt double #000;border-bottom:.5pt solid #000;', '5': 'border-bottom:.5pt solid #000;', '6': 'border-left:.5pt solid #000;border-right:.5pt solid #000;border-top:.5pt solid #000;' };
 const MSONF = { n2: '\\#\\,\\#\\#0\\.00', n0: '\\#\\,\\#\\#0', pct: '0\\.00%', int: '0' };
 function buildClip() {
@@ -629,7 +661,7 @@ function buildClip() {
   return { text: tsv.join('\r\n'), html: html.join('') };
 }
 document.addEventListener('copy', (e) => {
-  if ($('work').hidden || sheet === 'R' || !$('editor').hidden) return;
+  if ($('work').hidden || NOGRID() || !$('editor').hidden) return;
   if (document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
   const c = buildClip(); e.clipboardData.setData('text/plain', c.text); e.clipboardData.setData('text/html', c.html); e.preventDefault();
   const g = rng(); toast(`Copiado ${(g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1)} celda(s). Pégalo en Excel con su formato.`);
@@ -651,7 +683,7 @@ function parseTSV(t) {
   return rows;
 }
 document.addEventListener('paste', (e) => {
-  if ($('work').hidden || sheet === 'R' || !$('editor').hidden) return;
+  if ($('work').hidden || NOGRID() || !$('editor').hidden) return;
   if (document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
   const text = e.clipboardData && e.clipboardData.getData('text/plain'); if (!text) return;
   e.preventDefault();
@@ -709,7 +741,8 @@ $('tabL').onclick = () => { sheet = 'L'; const sub = lenovo.refs[0]; sel = sub ?
 function openMenu(x, y) {
   updateButtons();
   const items = [
-    ['Editar celda', () => startEdit(), !(cellAt(sel.r, sel.c) || {}).edit], null,
+    ['Editar celda', () => startEdit(), !(cellAt(sel.r, sel.c) || {}).edit],
+    ...(FB.on && sheet === 'P' ? [['Comentar esta línea…', openComment, false]] : []), null,
     ['Copiar   (Ctrl+C)', copyViaMenu, false], ['Pegar   (Ctrl+V)', () => toast('Para pegar usa Ctrl+V (en Mac ⌘V).'), false], null,
     ['Insertar línea debajo', A.lineAdd, $('bLineAdd').disabled], ['Eliminar línea', A.lineDel, $('bLineDel').disabled], null,
     ['Agregar fila de costo', A.costAdd, $('bCostAdd').disabled], ['Quitar fila de costo', A.costDel, $('bCostDel').disabled], null,
@@ -783,7 +816,7 @@ const RCOL = 'data/reglas/items';
 })();
 function regenLines() {
   if (!parsed || !model) return;
-  model.blocks.forEach((b) => { if (b.kind === 'item' && parsed.configs[b.cfg]) b.lines = E.describe(parsed.configs[b.cfg], rules).lines; });
+  model.blocks.forEach((b) => { if (b.kind === 'item' && parsed.configs[b.cfg]) { const d = E.describe(parsed.configs[b.cfg], rules); b.lines = d.lines; b.gen = d.lines.slice(); b.genCodes = d.codes; } });
 }
 let pendingRegen = false;
 function onRulesChanged(own) {
@@ -802,7 +835,9 @@ async function saveRule() {
   const btn = $('rSave'); btn.disabled = true;
   try {
     pendingRegen = true;
-    await rulesState.db.collection(RCOL).doc(code).set({ texto, accion, desc: desc || (rules[code] && rules[code].desc) || '', actualizado: new Date().toISOString() });
+    const data = { texto, accion, desc: desc || (rules[code] && rules[code].desc) || '', actualizado: new Date().toISOString() };
+    if (rulesState.db) await rulesState.db.collection(RCOL).doc(code).set(data);
+    else { await api('api/regla', { codigo: code, ...data }, true); rules[code] = data; onRulesChanged(true); toast('Regla guardada en GitHub. Vercel la publica en 1 minuto.'); }
     draft = { code: '', texto: '', accion: 'linea', desc: '' };
   } catch (err) {
     pendingRegen = false;
@@ -811,15 +846,15 @@ async function saveRule() {
   } finally { btn.disabled = false; render(); }
 }
 async function deleteRule(code) {
-  try { pendingRegen = true; await rulesState.db.collection(RCOL).doc(code).delete(); }
+  try { pendingRegen = true; if (rulesState.db) await rulesState.db.collection(RCOL).doc(code).delete(); else { await api('api/regla', { codigo: code, eliminar: true }, true); delete rules[code]; onRulesChanged(true); } }
   catch (_) { pendingRegen = false; toast('No se pudo eliminar la regla.'); }
 }
 function renderRules() {
   const list = Object.entries(rules).sort((a, b) => a[0].localeCompare(b[0]));
-  const ed = rulesState.canEdit && rulesState.db;
+  const ed = (rulesState.canEdit && rulesState.db) || (!rulesState.db && FB.on && FB.adminKey);
   let h = `<div class="rules"><div style="display:flex;flex-direction:column;gap:8px"><h2>Reglas de descripción</h2>
     <p>Cada regla dice qué texto pone la app cuando un configurador trae ese código de Lenovo. Manda sobre las reglas incorporadas y se aplica para todo el equipo desde el siguiente archivo que se suba. Usa <span class="mono">{cant}</span> para la cantidad por servidor.</p></div>`;
-  if (!rulesState.db && rulesState.source === 'repo') h += `<p class="note">En esta versión las reglas se leen del archivo <span class="mono">reglas.json</span> del repositorio. Para agregar o cambiar una, edita ese archivo en GitHub; el sitio se actualiza solo al guardar.</p>`;
+  if (!rulesState.db && rulesState.source === 'repo') h += `<p class="note">Las reglas viven en <span class="mono">reglas.json</span> del repositorio. ${ed ? 'Como administrador, lo que guardes aquí se escribe en GitHub y Vercel lo publica en un minuto.' : 'Para editarlas entra a la pestaña Aprendizaje con la clave de administrador.'}</p>`;
   else if (!rulesState.db) h += `<p class="err">Las reglas compartidas no están disponibles en esta vista.</p>`;
   else if (rulesState.error) h += `<p class="err">${esc(rulesState.error)}</p>`;
   if (ed) h += `<form class="rform" id="rForm">
@@ -842,6 +877,151 @@ function renderRules() {
     b.dataset.confirm = '1'; b.textContent = '¿Seguro? Eliminar';
   }));
 }
+
+// ---- aprendizaje: comentarios, correcciones y bandeja (solo versión web con API) ----
+const FB = { on: false, admin: false, adminKey: null, items: null, loading: false, err: '', lastSent: '' };
+try { FB.adminKey = sessionStorage.getItem('cp_admin') || null; } catch (_) {}
+(async () => {
+  if (window.claude && window.claude.use) return;
+  try { const r = await fetch('api/ping', { cache: 'no-store' }); if (!r.ok) return; const j = await r.json(); FB.on = !!j.feedback; FB.admin = !!j.admin; } catch (_) {}
+  $('tabA').hidden = !(FB.on && FB.admin);
+})();
+async function api(url, data, admin) {
+  const h = { 'Content-Type': 'application/json' };
+  if (admin) h['x-admin'] = FB.adminKey || ''; else h['x-clave'] = PASSWORD || '';
+  const r = await fetch(url, { method: data === undefined ? 'GET' : 'POST', headers: h, body: data === undefined ? undefined : JSON.stringify(data) });
+  let j = {}; try { j = await r.json(); } catch (_) {}
+  if (!r.ok) { const e = new Error(j.error || `Error ${r.status}`); e.status = r.status; throw e; }
+  return j;
+}
+const getName = () => { try { return localStorage.getItem('cp_nombre') || ''; } catch (_) { return ''; } };
+const setName = (v) => { try { localStorage.setItem('cp_nombre', v); } catch (_) {} };
+function descOf(cfg, code) {
+  if (!cfg) return '';
+  for (const f of [...cfg.features, ...cfg.items.map((i) => ({ code: i.pn, desc: i.desc })), ...cfg.items.flatMap((i) => i.features)]) if (String(f.code).toUpperCase() === String(code).toUpperCase()) return f.desc;
+  return '';
+}
+function lineCtx(bi, li) {
+  const b = model.blocks[bi]; if (!b) return { codes: [] };
+  const cfg = b.kind === 'item' ? parsed.configs[b.cfg] : null;
+  const text = (b.lines || [])[li] ?? '';
+  let codes = [];
+  if (b.gen) { let k = b.gen.indexOf(text); if (k < 0) k = li; codes = (b.genCodes || [])[k] || []; }
+  return { cfg, text, codes: codes.map((c) => ({ code: c, desc: descOf(cfg, c) })) };
+}
+let fbTarget = null;
+function openComment() {
+  const row = rowAt(sel.r); const C = row && row.cells.C;
+  const bi = row ? row.blockRef : undefined;
+  const ctxL = bi !== undefined && row.lineIdx !== undefined ? lineCtx(bi, row.lineIdx) : { codes: [], cfg: bi !== undefined && model.blocks[bi].kind === 'item' ? parsed.configs[model.blocks[bi].cfg] : null };
+  const linea = C && typeof C.v === 'string' ? C.v : '';
+  fbTarget = { linea, codigos: ctxL.codes, cfg: ctxL.cfg };
+  $('fbLine').textContent = linea || `(fila ${sel.r} sin texto)`;
+  $('fbCodes').innerHTML = ctxL.codes.map((c) => `<span class="chip" title="${esc(c.desc)}">${esc(c.code)}</span>`).join('');
+  $('fbAutor').value = getName(); $('fbText').value = '';
+  $('fbModal').hidden = false; setTimeout(() => ($('fbAutor').value ? $('fbText') : $('fbAutor')).focus(), 20);
+}
+$('fbCancel').onclick = () => ($('fbModal').hidden = true);
+$('fbModal').addEventListener('mousedown', (e) => { if (e.target === $('fbModal')) $('fbModal').hidden = true; });
+$('fbModal').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('fbModal').hidden = true; e.stopPropagation(); });
+$('fbForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const autor = $('fbAutor').value.trim(), comentario = $('fbText').value.trim(); if (!autor || !comentario) return;
+  setName(autor); const btn = $('fbSend'); btn.disabled = true;
+  try {
+    const cfg = fbTarget.cfg;
+    await api('api/feedback', { tipo: 'comentario', autor, comentario, linea: fbTarget.linea, codigos: fbTarget.codigos, archivo: fileName, cto: cfg ? cfg.cto : '', modelo: cfg ? (cfg.cfgName || cfg.name) : '' });
+    $('fbModal').hidden = true; toast('Comentario enviado. Gracias.');
+  } catch (err) { toast('No se pudo enviar: ' + err.message); }
+  finally { btn.disabled = false; }
+});
+function collectChanges() {
+  const out = [];
+  model.blocks.forEach((b) => {
+    if (b.kind !== 'item' || !b.gen) return;
+    const cfg = parsed.configs[b.cfg];
+    const cur = b.lines.map((l) => String(l || '')).filter((l) => l.trim());
+    const gen = b.gen.filter((l) => l.trim());
+    const removed = gen.map((l, i) => ({ l, codes: (b.genCodes || [])[b.gen.indexOf(l)] || [] })).filter((x) => !cur.includes(x.l));
+    const added = cur.filter((l) => !gen.includes(l));
+    const n = Math.max(removed.length, added.length);
+    const cambios = [];
+    for (let i = 0; i < n; i++) cambios.push({ antes: removed[i] ? removed[i].l : '', despues: added[i] || '', codigos: removed[i] ? removed[i].codes : [] });
+    if (cambios.length) out.push({ cfg, cambios });
+  });
+  return out;
+}
+function reportCorrections() {
+  if (!FB.on) return;
+  const groups = collectChanges(); if (!groups.length) return;
+  const key = JSON.stringify(groups.map((g) => g.cambios)); if (key === FB.lastSent) return; FB.lastSent = key;
+  for (const g of groups) {
+    const codes = [...new Set(g.cambios.flatMap((c) => c.codigos))].map((c) => ({ code: c, desc: descOf(g.cfg, c) }));
+    api('api/feedback', { tipo: 'correccion', autor: getName() || 'sin nombre', archivo: fileName, cto: g.cfg.cto, modelo: g.cfg.cfgName || g.cfg.name, cambios: g.cambios, codigos: codes }).catch(() => {});
+  }
+}
+async function loadLearn() {
+  FB.loading = true; FB.err = ''; render();
+  try { const j = await api('api/feedback', undefined, true); FB.items = j.items; }
+  catch (e) { FB.err = e.status === 401 ? 'Clave de administrador incorrecta.' : e.message; if (e.status === 401) { FB.adminKey = null; try { sessionStorage.removeItem('cp_admin'); } catch (_) {} } }
+  FB.loading = false; render();
+}
+function renderLearn() {
+  let h = `<div class="rules"><div style="display:flex;flex-direction:column;gap:8px"><h2>Aprendizaje</h2>
+    <p>Comentarios de los vendedores y correcciones que hicieron antes de descargar. Convierte cada uno en regla para que la próxima propuesta salga bien para todos, o ciérralo si no aplica. Cada elemento es un issue en GitHub.</p></div>`;
+  if (!FB.adminKey) {
+    h += `<form class="rform" id="aForm" style="grid-template-columns:minmax(0,320px) auto"><label>Clave de administrador<input type="password" id="aKey" autocomplete="off"></label><button class="btn btn-primary" type="submit">Abrir bandeja</button>${FB.err ? `<span class="hint err">${esc(FB.err)}</span>` : ''}</form></div>`;
+    $('sheet').innerHTML = h;
+    $('aForm').addEventListener('submit', (e) => { e.preventDefault(); FB.adminKey = $('aKey').value; try { sessionStorage.setItem('cp_admin', FB.adminKey); } catch (_) {} loadLearn(); });
+    setTimeout(() => $('aKey') && $('aKey').focus(), 20);
+    return;
+  }
+  h += `<div class="mrow" style="justify-content:flex-start"><button class="btn btn-secondary" id="aReload">${FB.loading ? 'Cargando…' : 'Actualizar'}</button><button class="linkbtn" id="aOut">Salir de administrador</button></div>`;
+  if (FB.err) h += `<p class="err">${esc(FB.err)}</p>`;
+  if (FB.items && !FB.items.length) h += `<p class="note">No hay pendientes. Todo lo que comentaron ya está atendido.</p>`;
+  h += '<div class="lcards">';
+  for (const it of FB.items || []) {
+    const d = it.datos || {};
+    const codes = d.codigos || [];
+    const sugerido = d.tipo === 'correccion' ? ((d.cambios || []).find((c) => c.despues) || {}).despues || '' : '';
+    h += `<div class="lcard" data-n="${it.numero}">
+      <div class="lhead"><span class="tag ${d.tipo === 'correccion' ? '' : 'ok'}">${d.tipo === 'correccion' ? 'Corrección' : 'Comentario'}</span><span>${esc(d.autor || '—')}</span><span class="mono">${esc(String(it.creado || '').slice(0, 10))}</span><span class="mono">${esc(d.archivo || '')}</span><a class="linkbtn" href="${esc(it.url)}" target="_blank" rel="noopener">#${it.numero} en GitHub</a></div>`;
+    if (d.tipo === 'correccion') h += `<div class="ldiff">${(d.cambios || []).map((c) => `<span class="a">${esc(c.antes || '(no existía)')}</span><span class="arrow">→</span><span class="b">${esc(c.despues || '(eliminada)')}</span>`).join('')}</div>`;
+    else h += `<div class="quote">${esc(d.linea || '(sin línea)')}</div><div style="font-size:14px;line-height:1.5">${esc(d.comentario || '')}</div>`;
+    if (codes.length) h += `<div class="chips">${codes.map((c) => `<span class="chip" title="${esc(c.desc || '')}">${esc(c.code)}</span>`).join('')}</div>`;
+    h += `<form class="lform" data-form="${it.numero}">
+        <label>Código Lenovo${codes.length ? `<select name="codigo">${codes.map((c) => `<option value="${esc(c.code)}" data-desc="${esc(c.desc || '')}">${esc(c.code)}</option>`).join('')}</select>` : '<input name="codigo" placeholder="B8P9" style="text-transform:uppercase">'}</label>
+        <label>Texto en la propuesta<input name="texto" value="${esc(sugerido)}" placeholder="{cant} puertos Ethernet 100Gb QSFP56,"></label>
+        <label>Acción<select name="accion"><option value="linea">Agregar línea</option><option value="ignorar">No mencionar</option></select></label>
+        <div class="mrow"><button type="button" class="btn btn-secondary" data-close="${it.numero}">Cerrar sin regla</button><button class="btn btn-primary" type="submit">Convertir en regla</button></div>
+      </form></div>`;
+  }
+  h += '</div></div>';
+  $('sheet').innerHTML = h;
+  $('aReload').onclick = loadLearn;
+  $('aOut').onclick = () => { FB.adminKey = null; FB.items = null; try { sessionStorage.removeItem('cp_admin'); } catch (_) {} render(); };
+  $('sheet').querySelectorAll('form[data-form]').forEach((f) => f.addEventListener('submit', async (e) => {
+    e.preventDefault(); const n = +f.dataset.form; const fd = new FormData(f);
+    const codigo = String(fd.get('codigo') || '').trim().toUpperCase(); const texto = String(fd.get('texto') || ''); const accion = String(fd.get('accion'));
+    const opt = f.querySelector('select[name="codigo"] option:checked'); const desc = opt ? opt.dataset.desc : '';
+    if (!/^[A-Z0-9][A-Z0-9-]{1,19}$/.test(codigo)) return toast('Escribe un código Lenovo válido.');
+    if (accion === 'linea' && !texto.trim()) return toast('Escribe el texto de la regla.');
+    f.querySelectorAll('button').forEach((b) => (b.disabled = true));
+    try {
+      await api('api/regla', { codigo, texto, accion, desc, numero: n }, true);
+      rules[codigo] = { texto, accion, desc }; FB.items = FB.items.filter((x) => x.numero !== n);
+      if (model) { regenLines(); }
+      toast(`Regla ${codigo} guardada. Vercel la publica en 1 minuto.`); render();
+    } catch (err) { toast('No se pudo guardar: ' + err.message); f.querySelectorAll('button').forEach((b) => (b.disabled = false)); }
+  }));
+  $('sheet').querySelectorAll('[data-close]').forEach((b) => (b.onclick = async () => {
+    if (!b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = '¿Seguro? Cerrar'; return; }
+    const n = +b.dataset.close; b.disabled = true;
+    try { await api('api/cerrar', { numero: n }, true); FB.items = FB.items.filter((x) => x.numero !== n); render(); toast('Cerrado.'); }
+    catch (err) { toast('No se pudo cerrar: ' + err.message); b.disabled = false; }
+  }));
+}
+$('tabA').onclick = () => { sheet = 'A'; render(); if (FB.adminKey && !FB.items && !FB.loading) loadLearn(); };
 // ---- descarga ----
 let downloads = null;
 (async () => { try { downloads = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (_) { downloads = null; } })();
@@ -860,6 +1040,7 @@ $('bDownload').onclick = async () => {
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }
+    reportCorrections();
   } catch (err) { toast('No se pudo generar el Excel: ' + (err.message || err)); }
   finally { btn.disabled = false; }
 };

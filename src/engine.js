@@ -205,24 +205,28 @@
     const has = (re) => all.filter((f) => re.test(f.desc));
     const warn = [];
     const { model, family, u } = modelOf(cfg);
-    const lines = [];
+    const lines = [], codes = [];
+    let cur = [];
+    const C = (arr) => (arr || []).filter(Boolean).map((f) => String(f.code || f.pn || f));
+    const L = (t) => { lines.push(t); codes.push(cur.slice()); };
     const isMT = /\bMT\b|MEMORY\s*TIERING|TIERING/i.test(`${cfg.name} ${cfg.cfgName || ''}`);
     const isVX = /^VX|^HX/.test(model);
     const isStorage = /D4390/.test(model);
-    lines.push(`Lenovo ${family} ${model}${u ? `, para rack (${u}U)` : ''},`);
+    cur = [cfg.cto];
+    L(`Lenovo ${family} ${model}${u ? `, para rack (${u}U)` : ''},`);
 
     // CPU
     let cpus = 0;
     const cpu = has(/Xeon|EPYC/i).filter((f) => !/Heatsink|Disipador|Dummy|Clip/i.test(f.desc))[0];
     if (cpu) {
-      cpus = cpu.qty;
+      cpus = cpu.qty; cur = C([cpu]);
       const m = /(Xeon|EPYC)\s+(\S+)\s+(\d+)C\b.*?([\d.,]+)\s*GHz/i.exec(cpu.desc);
       if (m) {
         const brand = m[1].toUpperCase() === 'EPYC' ? 'AMD EPYC' : 'Intel Xeon';
         const ghz = m[4].replace(',', '.');
-        if (cpus === 1) lines.push(`Un procesador ${brand} ${m[2]} (${m[3]} cores/${ghz}Ghz), expandible a 2 procesadores,`);
-        else lines.push(`${NUMW[cpus] || cpus} procesadores ${brand} ${m[2]} de ${m[3]} cores/${ghz}Ghz (total ${cpus * m[3]} cores),`);
-      } else { lines.push(`${cpus} x ${cpu.desc},`); warn.push(`Procesador no reconocido: "${cpu.desc}"`); }
+        if (cpus === 1) L(`Un procesador ${brand} ${m[2]} (${m[3]} cores/${ghz}Ghz), expandible a 2 procesadores,`);
+        else L(`${NUMW[cpus] || cpus} procesadores ${brand} ${m[2]} de ${m[3]} cores/${ghz}Ghz (total ${cpus * m[3]} cores),`);
+      } else { L(`${cpus} x ${cpu.desc},`); warn.push(`Procesador no reconocido: "${cpu.desc}"`); }
     } else if (!isStorage) warn.push('No encontré el procesador en la configuración.');
 
     // Discos de datos
@@ -238,21 +242,22 @@
       }
       const slots = (/^SR6|^VX6|^HX6/.test(model) ? 16 : 12) * Math.max(cpus, 1);
       const maxSlots = (/^SR6|^VX6|^HX6/.test(model) ? 16 : 12) * 2;
+      cur = C(mem);
       if (isMT) {
-        mtDrives = drives.filter((d) => /Mixed Use|uso mixto/i.test(d.desc) && /NVMe/i.test(d.desc));
+        mtDrives = drives.filter((d) => /Mixed Use|uso mixto/i.test(d.desc) && /NVMe/i.test(d.desc)); cur = C(mem.concat(mtDrives));
         const k = mtDrives.reduce((s, d) => s + d.qty, 0);
         const cap = mtDrives[0] ? fmtCap((/(\d+(?:[.,]\d+)?)\s*(TB|GB)\b/.exec(mtDrives[0].desc) || ['', '?', 'TB']).slice(1).join('')) : '';
-        lines.push(`${fmtGB(total * 2)} con Memory Tiering (${n} x ${size}GB TruDDR5${speed ? ` ${speed}Mhz` : ''} + ${k} x NVMe de ${cap}${k > 1 ? ' en RAID-1' : ''}),`);
+        L(`${fmtGB(total * 2)} con Memory Tiering (${n} x ${size}GB TruDDR5${speed ? ` ${speed}Mhz` : ''} + ${k} x NVMe de ${cap}${k > 1 ? ' en RAID-1' : ''}),`);
         if (!k) warn.push('Configuración con Memory Tiering sin unidad NVMe Mixed Use detectada; revisa la línea de memoria.');
       } else {
         const free = slots - n;
-        lines.push(`${total}GB de memoria RAM (${n} x ${size}GB TruDDR5${speed ? ` ${speed}Mhz` : ''}), ${free} zócalos libres${cpus === 1 ? `, con el segundo procesador se habilitan ${maxSlots - slots} zócalos adicionales` : ''},`);
+        L(`${total}GB de memoria RAM (${n} x ${size}GB TruDDR5${speed ? ` ${speed}Mhz` : ''}), ${free} zócalos libres${cpus === 1 ? `, con el segundo procesador se habilitan ${maxSlots - slots} zócalos adicionales` : ''},`);
       }
     } else if (!isStorage) warn.push('No encontré memoria RAM en la configuración.');
 
     // Red
     const nics = has(/Ethernet|Network Adapter|Adaptador de red/i).filter((f) => /port|puerto/i.test(f.desc) && !/Riser|Cable|Filler|Relleno|PXE|Cage/i.test(f.desc));
-    const byType = {};
+    const byType = {}, byTypeC = {};
     for (const nc of nics) {
       const pm = /(\d+)\s*-?\s*port|(\d+)\s*puertos/i.exec(nc.desc);
       const ports = pm ? +(pm[1] || pm[2]) : 2;
@@ -262,31 +267,34 @@
       else if (/10\s*GBASE-T|10\s*GbE.*RJ-?45/i.test(nc.desc)) label = 'Ethernet 10Gb RJ-45';
       else if (/10\s*GbE.*SFP\+/i.test(nc.desc)) label = 'Ethernet 10Gb SFP+';
       else if (/\b1\s*GbE/i.test(nc.desc)) label = 'Ethernet 1Gb RJ-45';
-      byType[label] = (byType[label] || 0) + ports * nc.qty;
+      byType[label] = (byType[label] || 0) + ports * nc.qty; (byTypeC[label] = byTypeC[label] || []).push(nc);
     }
-    for (const [label, n] of Object.entries(byType)) lines.push(`${n} puertos ${label},`);
+    for (const [label, n] of Object.entries(byType)) (cur = C(byTypeC[label])), L(`${n} puertos ${label},`);
     const fcs = has(/Fibre Channel|canal de fibra/i).filter((f) => /port|puerto/i.test(f.desc));
     if (fcs.length) {
+      cur = C(fcs);
       let n = 0, sp = '';
       for (const f of fcs) { const pm = /(\d+)\s*-?\s*port|(\d+)\s*puertos/i.exec(f.desc); n += (pm ? +(pm[1] || pm[2]) : 2) * f.qty; const s = /(\d+)\s*Gb/i.exec(f.desc); if (s) sp = s[1]; }
-      lines.push(`${n} puertos ${sp === '32' ? '16/32' : sp}Gb Fibre Channel,`);
+      L(`${n} puertos ${sp === '32' ? '16/32' : sp}Gb Fibre Channel,`);
     }
 
     // Arranque M.2
     const m2 = has(/M\.2/i).filter((f) => /SSD/i.test(f.desc) && !/HeatSink|Disipador|Cage|Tray|Interposer|Kit|Cable|Enablement|Habilitaci|Bandeja|Jaula/i.test(f.desc));
     if (m2.length) {
+      cur = C(m2);
       const n = m2.reduce((s, d) => s + d.qty, 0);
       const cap = fmtCap((/(\d+(?:[.,]\d+)?)\s*(TB|GB)\b/.exec(m2[0].desc) || ['', '480', 'GB']).slice(1).join(''));
       const iface = /NVMe/i.test(m2[0].desc) ? 'NVMe ' : '';
-      lines.push(n > 1 ? `${n} unidades SSD ${iface}M.2 de ${cap} (en RAID-1) para ${isVX || /VMW/i.test(cfg.name) ? 'hipervisor' : 'sistema operativo o hipervisor'},`
+      L(n > 1 ? `${n} unidades SSD ${iface}M.2 de ${cap} (en RAID-1) para ${isVX || /VMW/i.test(cfg.name) ? 'hipervisor' : 'sistema operativo o hipervisor'},`
         : `1 unidad SSD ${iface}M.2 de ${cap} para ${isVX || /VMW/i.test(cfg.name) ? 'hipervisor' : 'sistema operativo o hipervisor'},`);
     }
 
     // RAID
     const raid = has(/RAID\s*\d{3,4}-\d+i/i).filter((f) => !/SuperCap|Cable/i.test(f.desc))[0];
     if (raid) {
+      cur = C([raid]);
       const c = /(\d+)\s*GB\s*Flash/i.exec(raid.desc);
-      lines.push(c ? `Controlador de discos con ${c[1]}GB de caché, maneja RAID-0/1/5/6/10,` : 'Controlador de discos RAID-0/1/10/5,');
+      L(c ? `Controlador de discos con ${c[1]}GB de caché, maneja RAID-0/1/5/6/10,` : 'Controlador de discos RAID-0/1/10/5,');
     }
 
     // Discos de datos (excluye los de Memory Tiering)
@@ -297,32 +305,36 @@
       const iface = /NVMe/i.test(d.desc) ? 'NVMe' : /SAS/i.test(d.desc) ? 'SAS' : /SATA/i.test(d.desc) ? 'SATA' : '';
       const use = /Mixed Use|uso mixto/i.test(d.desc) ? ' tipo Mixed Use' : /Read Intensive|lectura intensiva/i.test(d.desc) ? ' tipo Read Intensive' : '';
       const kind = /HDD|rpm/i.test(d.desc) ? 'discos' : 'unidades SSD';
-      nData += d.qty;
-      lines.push(`${d.qty} ${d.qty === 1 ? (kind === 'discos' ? 'disco' : 'unidad SSD') : kind} ${iface}${use} de ${cap}${d.qty > 1 ? ' c/u' : ''}${isVX ? ', para almacenamiento VSAN ESA' : ''},`.replace(/\s+/g, ' '));
+      nData += d.qty; cur = C([d]);
+      L(`${d.qty} ${d.qty === 1 ? (kind === 'discos' ? 'disco' : 'unidad SSD') : kind} ${iface}${use} de ${cap}${d.qty > 1 ? ' c/u' : ''}${isVX ? ', para almacenamiento VSAN ESA' : ''},`.replace(/\s+/g, ' '));
     }
     const ch = has(/(\d+)x2[.,]5"/i)[0];
     if (ch && nData) {
+      cur = C([ch]);
       const bays = +/(\d+)x2[.,]5"/i.exec(ch.desc)[1];
       const free = bays - nData - mtDrives.reduce((s, d) => s + d.qty, 0);
-      if (free > 0) lines.push(`${free} bahías libres para crecimiento en discos,`);
+      if (free > 0) L(`${free} bahías libres para crecimiento en discos,`);
     }
 
     // GPU
     const gpus = has(/NVIDIA/i).filter((f) => !/Cable|Kit|Riser|Power|Bracket/i.test(f.desc));
     for (const gp of gpus) {
+      cur = C([gp]);
       const m = /NVIDIA\s+([A-Z]*\d+[A-Za-z]*(?:\s?NVL)?)\s.*?(\d+)\s*GB/i.exec(gp.desc);
-      lines.push(m ? `${gp.qty} GPU NVIDIA ${m[1]} ${m[2]}GB PCIe,` : `${gp.qty} x ${gp.desc},`);
+      L(m ? `${gp.qty} GPU NVIDIA ${m[1]} ${m[2]}GB PCIe,` : `${gp.qty} x ${gp.desc},`);
     }
 
     // Energía / ventilación
     const psu = has(/Power Supply|Fuente de alimentaci/i)[0];
-    if (psu) lines.push(psu.qty >= 2 ? `${NUMW[psu.qty] || psu.qty} fuentes de poder redundantes y hot-swap, ventiladores redundantes y hot-swap,` : '1 fuente de poder, ventiladores redundantes y hot-swap,');
+    cur = C([psu]);
+    if (psu) L(psu.qty >= 2 ? `${NUMW[psu.qty] || psu.qty} fuentes de poder redundantes y hot-swap, ventiladores redundantes y hot-swap,` : '1 fuente de poder, ventiladores redundantes y hot-swap,');
 
     // Gestión
+    cur = C(items.filter((i) => /XClarity|XCC/i.test(i.desc)));
     const allItems = items.map((i) => i.desc).join(' | ') + ' | ' + all.map((f) => f.desc).join(' | ');
-    if (/XClarity Controller Prem|XClarity Platinum|XCC\d? premier/i.test(allItems)) lines.push('Puerto de gestión remota con XClarity Premier,');
-    else lines.push('Puerto de gestión remota con XClarity Controller,');
-    if (/XClarity One/i.test(allItems)) lines.push('Gestión centralizada con XClarity One,');
+    if (/XClarity Controller Prem|XClarity Platinum|XCC\d? premier/i.test(allItems)) L('Puerto de gestión remota con XClarity Premier,');
+    else L('Puerto de gestión remota con XClarity Controller,');
+    if (/XClarity One/i.test(allItems)) (cur = C(items.filter((i) => /XClarity One/i.test(i.desc)))), L('Gestión centralizada con XClarity One,');
 
     // Garantía
     const wItems = items.map((i) => i.desc);
@@ -340,26 +352,28 @@
       w = `** Garantía de hardware: ${y ? y[1] : 3} años en modalidad 5x9 con tiempo de respuesta de 24 horas laborables`;
     }
     if (kyd) w += ' y Keep Your Drive (KYD)';
-    lines.push(w);
+    cur = C(items.filter((i) => /Premier|Foundation|Essential|CSR|KYD|Keep Your Drive/i.test(i.desc)));
+    if (!cur.length) cur = [cfg.cto];
+    L(w);
 
     // Reglas del diccionario: van antes de energía / gestión / garantía
-    const custom = [];
+    const custom = [], customC = [];
     const done = new Set();
     for (const { f, r } of hit) {
       const code = String(f.code || f.pn).toUpperCase();
       if (done.has(code) || r.accion === 'ignorar' || !String(r.texto || '').trim()) { done.add(code); continue; }
       done.add(code);
       const q = f.qty || 1;
-      custom.push(String(r.texto).replace(/\{cant\}/gi, String(+q.toFixed(2))));
+      custom.push(String(r.texto).replace(/\{cant\}/gi, String(+q.toFixed(2)))); customC.push([code]);
     }
     if (custom.length) {
       let at = lines.findIndex((l) => /fuentes? de poder|Puerto de gestión|Garantía/i.test(l));
       if (at < 0) at = lines.length;
-      lines.splice(at, 0, ...custom);
+      lines.splice(at, 0, ...custom); codes.splice(at, 0, ...customC);
     }
-    const out = [];
-    lines.forEach((l) => out.push(...wrapLine(l)));
-    return { lines: out, warnings: warn, model, isVX, hasData: nData > 0, hasGPU: gpus.length > 0, isMT };
+    const out = [], outC = [];
+    lines.forEach((l, i) => { const w = wrapLine(l); out.push(...w); w.forEach(() => outC.push(codes[i] || [])); });
+    return { lines: out, codes: outC, warnings: warn, model, isVX, hasData: nData > 0, hasGPU: gpus.length > 0, isMT };
   }
 
   // ---------- modelo de propuesta por defecto ----------
@@ -384,7 +398,7 @@
       d.warnings.forEach((t) => warnings.push({ level: 'medio', text: `${cfg.cto}: ${t}` }));
       blocks.push({
         kind: 'item', id: 'b' + i + '_' + Math.random().toString(36).slice(2, 6), cfg: i,
-        title: sectionTitle(cfg, d), qty: cfg.qty || 1, lines: d.lines,
+        title: sectionTitle(cfg, d), qty: cfg.qty || 1, lines: d.lines, gen: d.lines.slice(), genCodes: d.codes,
         cost: [
           { kind: 'ref', factor: 25 },
           { kind: 'free', sku: 'SERVICIO', detalle: '', cant: 8, costo: 48, factor: 40 },
