@@ -26,10 +26,10 @@ def tplsheet(x, extra_tail=False):
     x = re.sub(r'<selection [^>]*/>', '<selection activeCell="B2" sqref="B2"/>', x)
     return x
 s1 = tplsheet(t('xl/worksheets/sheet2.xml'))
-s1 = s1.replace('Hernán Gavilanes', '{{FIRMA}}')  # firma editable
-s1 = s1.replace('(09)9 321-5391', '{{CEL}}').replace('gerencia2@coresolutions.com.ec', '{{EMAIL}}')
-assert '{{CEL}}' in s1 and '{{EMAIL}}' in s1
-assert '{{FIRMA}}' in s1
+# Firma, celular y correo del pie de página -> marcadores (los valores reales van cifrados en vault.json)
+s1 = re.sub(r'(Atentamente,\s*\n(?:\s*\n)*)([^\n]+)(\nCORESOLUTIONS)', r'\1{{FIRMA}}\3', s1, count=1)
+s1 = re.sub(r'(Cel\.:\s*)([^,<]+)(,\s*e-mail:\s*)([^<\s]+)', r'\1{{CEL}}\3{{EMAIL}}', s1, count=1)
+assert '{{FIRMA}}' in s1 and '{{CEL}}' in s1 and '{{EMAIL}}' in s1
 s2 = tplsheet(t('xl/worksheets/sheet4.xml')).replace('tabSelected="1" ','')
 s1 = s1  # tab selected stays on propuesta
 keep['xl/worksheets/sheet1.xml'] = s1
