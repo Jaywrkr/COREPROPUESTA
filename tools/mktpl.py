@@ -38,7 +38,18 @@ keep['xl/worksheets/_rels/sheet1.xml.rels'] = t('xl/worksheets/_rels/sheet2.xml.
 keep['xl/printerSettings/printerSettings1.bin'] = files['xl/printerSettings/printerSettings2.bin']
 keep['xl/drawings/vmlDrawing1.vml'] = files['xl/drawings/vmlDrawing2.vml']
 keep['xl/drawings/_rels/vmlDrawing1.vml.rels'] = files['xl/drawings/_rels/vmlDrawing2.vml.rels']
-for n in ['xl/theme/theme1.xml','xl/styles.xml','docProps/core.xml','docProps/app.xml','_rels/.rels']:
+# Estilo extra: nota resaltada (copia del estilo 58 -negrita roja- con relleno amarillo), queda como índice 75
+st = t('xl/styles.xml')
+cx = re.search(r'<cellXfs count="(\d+)">(.*?)</cellXfs>', st, re.S)
+xfs = re.findall(r'<xf [^>]*?(?:/>|>.*?</xf>)', cx.group(2), re.S)
+assert len(xfs) == int(cx.group(1)) == 75, len(xfs)
+fills = re.findall(r'<fill>.*?</fill>', re.search(r'<fills[^>]*>(.*?)</fills>', st, re.S).group(1), re.S)
+yellow = [i for i, f in enumerate(fills) if 'FFFFFF00' in f][0]
+hi = re.sub(r'fillId="\d+"', f'fillId="{yellow}"', xfs[58])
+hi = hi.replace('<xf ', '<xf applyFill="1" ', 1) if 'applyFill' not in hi else hi
+st = st.replace(cx.group(0), f'<cellXfs count="76">{cx.group(2)}{hi}</cellXfs>')
+keep['xl/styles.xml'] = st
+for n in ['xl/theme/theme1.xml','docProps/core.xml','docProps/app.xml','_rels/.rels']:
     keep[n] = files[n]
 print(t('xl/drawings/_rels/vmlDrawing2.vml.rels'))
 for n in re.findall(r'media/image\d+\.png', t('xl/drawings/_rels/vmlDrawing2.vml.rels')):

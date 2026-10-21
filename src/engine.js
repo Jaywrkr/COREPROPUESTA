@@ -421,7 +421,10 @@
       });
     });
     const hasData = blocks.some((b) => b._hasData);
-    if (meta.expires) blocks.push({ kind: 'note', id: 'n1', lines: [`NOTA: ${configs.length > 1 ? 'LOS PRECIOS SON VÁLIDOS' : 'EL PRECIO ES VÁLIDO'} HASTA EL DÍA ${fechaNota(meta.expires)}.`] });
+    // Validez: hoy + 15 días, resaltada para validarla contra la cotización del mayorista (issue #5)
+    const valid = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + 15);
+    blocks.push({ kind: 'note', id: 'n1', resaltado: true, lines: [`NOTA: ${configs.length > 1 ? 'LOS PRECIOS SON VÁLIDOS' : 'EL PRECIO ES VÁLIDO'} HASTA EL DÍA ${fechaNota(valid)}.`] });
+    warnings.push({ level: 'medio', text: `La validez se puso a 15 días (${fechaNota(valid)}), resaltada en amarillo. Confírmala contra la cotización del mayorista${meta.expires ? `; el Bid de Lenovo vence el ${fechaNota(meta.expires)}` : ''}.` });
     blocks.push({
       kind: 'text', id: 't1', title: 'Servicios de implementación incluidos:',
       lines: [
@@ -562,7 +565,7 @@
     cliente: 64, clienteFill: 65, conf2: 66, titulo: 67, tituloFill: 68, aten: 69, fecha: 70, cotiz: 71, conf5: 72,
     hdrL: 23, hdrR: 4, F: 2,
     firstB: 24, firstC: 27, firstD: 28, firstE: 25,
-    B: 5, Bend: 6, D: 7, Dend: 8, Cfirst: 42, C: 32, Cwar: 35, Csec: 27, Cnote: 58, CsvcT: 59, Csvc: 60, Cend: 38,
+    B: 5, Bend: 6, D: 7, Dend: 8, Cfirst: 42, C: 32, Cwar: 35, Csec: 27, Cnote: 58, CnoteHi: 75, CsvcT: 59, Csvc: 60, Cend: 38,
     gRef: 26, gSvc: 9, I: 10, J: 11, K: 12, L: 12, M: 13, N: 14, O: 11,
     tG: 15, tH: 16, tI: 17, tJ: 18, tK: 19, tL: 20, tM: 21, tN: 22, tO: 3,
     iva: 61, total: 36, totalV: 37, condH: 62, cond: 63,
@@ -653,7 +656,7 @@
         if (firstRow.cells.E.v !== '') { delete firstRow.cells.E.t; grand += firstRow.cells.E.v; }
         body().blockRef = bi; // separador
       } else if (b.kind === 'note') {
-        b.lines.forEach((l, i) => { const o = body(); o.blockRef = bi; o.lineIdx = i; o.cells.C = { v: l, s: ST.Cnote, edit: `b.${bi}.lines.${i}` }; });
+        b.lines.forEach((l, i) => { const o = body(); o.blockRef = bi; o.lineIdx = i; o.cells.C = { v: l, s: b.resaltado ? ST.CnoteHi : ST.Cnote, edit: `b.${bi}.lines.${i}` }; });
         body().blockRef = bi;
       } else if (b.kind === 'text') {
         if (b.title) { const o = body(); o.blockRef = bi; o.cells.C = { v: b.title, s: ST.CsvcT, edit: `b.${bi}.title` }; }
